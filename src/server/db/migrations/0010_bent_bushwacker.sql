@@ -1,0 +1,1 @@
+ALTER TABLE "crm_report_items" ADD COLUMN "item_note" text;

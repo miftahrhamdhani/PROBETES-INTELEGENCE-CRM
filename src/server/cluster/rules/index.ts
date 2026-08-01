@@ -1,0 +1,12 @@
+export { checkB } from "./b";
+export { checkA1 } from "./a1";
+export { checkCProdig } from "./c-prodig";
+export { checkCHp } from "./c-hp";
+export { checkCF2 } from "./c-f2";
+export { checkD } from "./d";
+export { checkDhp } from "./dhp";
+export { checkA2 } from "./a2";
+export { checkA3 } from "./a3";
+export { checkA4 } from "./a4";
+export { checkE } from "./e";
+export { checkF } from "./f";

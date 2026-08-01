@@ -1,0 +1,192 @@
+"use client";
+
+import * as React from "react";
+import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { Loader2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+export interface DataTableProps<T> {
+  /** Kolom data — nomor baris ditambahkan otomatis oleh DataTable, jangan sertakan di sini. */
+  columns: ColumnDef<T, any>[];
+  /** Seluruh baris yang sudah di-load sejauh ini (akumulasi infinite scroll), urutan dari server. */
+  rows: T[];
+  rowKey: (row: T, index: number) => string | number;
+  loading: boolean;
+  hasMore: boolean;
+  onLoadMore: () => void;
+  emptyMessage?: string;
+  /** Tinggi viewport tabel (px) — sisa baris di-virtualisasi, tidak semua di-render sekaligus. */
+  height?: number;
+  rowHeight?: number;
+  onRowClick?: (row: T) => void;
+}
+
+/**
+ * Tabel data generik: nomor baris kontinu (index dalam array = urutan filter server),
+ * kolom resizable (drag border kanan header), infinite scroll (memicu onLoadMore saat
+ * mendekati baris terakhir yang sudah di-render), dan virtualized rendering (hanya
+ * baris yang terlihat di-mount ke DOM) — dipakai semua tabel data besar di aplikasi ini
+ * (Customers, Group Membership, Customer Cluster, CRM Report).
+ */
+export function DataTable<T>({
+  columns,
+  rows,
+  rowKey,
+  loading,
+  hasMore,
+  onLoadMore,
+  emptyMessage = "Tidak ada data yang cocok dengan filter ini.",
+  height = 560,
+  rowHeight = 38,
+  onRowClick,
+}: DataTableProps<T>) {
+  const numberedColumns = React.useMemo<ColumnDef<T, any>[]>(
+    () => [
+      {
+        id: "__rowNumber",
+        header: "No.",
+        size: 56,
+        minSize: 44,
+        maxSize: 90,
+        enableResizing: false,
+        cell: ({ row }) => <span className="tabular text-muted-foreground">{row.index + 1}</span>,
+      },
+      ...columns,
+    ],
+    [columns]
+  );
+
+  const table = useReactTable({
+    data: rows,
+    columns: numberedColumns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: (row, index) => String(rowKey(row, index)),
+    columnResizeMode: "onChange",
+    defaultColumn: { size: 150, minSize: 70, maxSize: 520 },
+  });
+
+  const parentRef = React.useRef<HTMLDivElement>(null);
+  const tableRows = table.getRowModel().rows;
+
+  const virtualizer = useVirtualizer({
+    count: tableRows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 12,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastIndex = virtualItems[virtualItems.length - 1]?.index;
+
+  React.useEffect(() => {
+    if (lastIndex == null) return;
+    if (lastIndex >= tableRows.length - 8 && hasMore && !loading) onLoadMore();
+  }, [lastIndex, tableRows.length, hasMore, loading, onLoadMore]);
+
+  const totalSize = virtualizer.getTotalSize();
+  const paddingTop = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
+  const paddingBottom = virtualItems.length > 0 ? totalSize - (virtualItems[virtualItems.length - 1]?.end ?? 0) : 0;
+
+  if (loading && rows.length === 0) {
+    return <TableSkeleton columnCount={numberedColumns.length} rowHeight={rowHeight} />;
+  }
+
+  if (!loading && rows.length === 0) {
+    return <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div ref={parentRef} className="scrollbar-thin overflow-auto" style={{ height }}>
+        <table className="border-collapse text-xs" style={{ width: table.getTotalSize(), tableLayout: "fixed" }}>
+          <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur supports-[backdrop-filter]:bg-muted/80">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <th
+                    key={header.id}
+                    className="relative select-none whitespace-nowrap border-b px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                    style={{ width: header.getSize() }}
+                  >
+                    {flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.column.getCanResize() ? (
+                      <div
+                        onMouseDown={header.getResizeHandler()}
+                        onTouchStart={header.getResizeHandler()}
+                        className={cn(
+                          "absolute right-0 top-0 z-20 h-full w-1.5 cursor-col-resize touch-none select-none bg-transparent transition-colors hover:bg-primary/50",
+                          header.column.getIsResizing() && "bg-primary"
+                        )}
+                      />
+                    ) : null}
+                  </th>
+                ))}
+              </tr>
+            ))}
+          </thead>
+          <tbody>
+            {paddingTop > 0 ? (
+              <tr aria-hidden="true">
+                <td style={{ height: paddingTop }} colSpan={numberedColumns.length} />
+              </tr>
+            ) : null}
+            {virtualItems.map((virtualRow) => {
+              const row = tableRows[virtualRow.index];
+              if (!row) return null;
+              return (
+                <tr
+                  key={row.id}
+                  className={cn(
+                    "border-b transition-colors hover:bg-muted/40",
+                    onRowClick && "cursor-pointer"
+                  )}
+                  style={{ height: rowHeight }}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 align-middle" style={{ width: cell.column.getSize() }}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+            {paddingBottom > 0 ? (
+              <tr aria-hidden="true">
+                <td style={{ height: paddingBottom }} colSpan={numberedColumns.length} />
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Memuat...
+          </div>
+        ) : null}
+        {!hasMore && rows.length > 0 ? (
+          <div className="py-2 text-center text-[11px] text-muted-foreground">
+            {rows.length.toLocaleString("id-ID")} baris — akhir daftar
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TableSkeleton({ columnCount, rowHeight }: { columnCount: number; rowHeight: number }) {
+  const rows = Array.from({ length: 8 });
+  return (
+    <div className="overflow-hidden rounded-md border">
+      <div className="space-y-0">
+        {rows.map((_, index) => (
+          <div key={index} className="flex items-center gap-3 border-b px-3 last:border-b-0" style={{ height: rowHeight }}>
+            {Array.from({ length: Math.min(columnCount, 7) }).map((_, col) => (
+              <Skeleton key={col} className="h-3.5 flex-1" style={{ animationDelay: `${(index + col) * 30}ms` }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

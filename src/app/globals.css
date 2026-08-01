@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 220 24% 97%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 214 68% 44%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 93%;
+    --secondary-foreground: 222 47% 16%;
+    --muted: 215 27% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 213 94% 94%;
+    --accent-foreground: 214 76% 32%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 25% 86%;
+    --input: 214 25% 86%;
+    --ring: 214 68% 44%;
+    --radius: 0.625rem;
+
+    --chart-surface: #fcfcfb;
+    --chart-grid: #e1e0d9;
+    --chart-axis: #898781;
+    --series-blue: #2a78d6;
+    --series-orange: #eb6834;
+    --series-aqua: #1baf7a;
+    --series-yellow: #eda100;
+    --series-magenta: #e87ba4;
+    --series-green: #008300;
+    --series-violet: #4a3aa7;
+    --series-red: #e34948;
+    --heat-100: #cde2fb;
+    --heat-200: #9ec5f4;
+    --heat-300: #6da7ec;
+    --heat-400: #3987e5;
+    --heat-500: #256abf;
+    --heat-600: #184f95;
+    --heat-700: #0d366b;
+    --heat-ink-light: #ffffff;
+    --heat-ink-dark: hsl(var(--foreground));
+    --heat-stripe: rgba(15, 23, 42, 0.08);
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 220 20% 7%;
+    --foreground: 210 40% 98%;
+    --card: 220 17% 10%;
+    --card-foreground: 210 40% 98%;
+    --primary: 213 78% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 22% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 22% 15%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 28% 18%;
+    --accent-foreground: 213 86% 75%;
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 20% 22%;
+    --input: 217 20% 22%;
+    --ring: 213 78% 56%;
+
+    --chart-surface: #1a1a19;
+    --chart-grid: #363634;
+    --chart-axis: #aaa8a2;
+    --series-blue: #3987e5;
+    --series-orange: #d95926;
+    --series-aqua: #199e70;
+    --series-yellow: #c98500;
+    --series-magenta: #d55181;
+    --series-green: #008300;
+    --series-violet: #9085e9;
+    --series-red: #e66767;
+    --heat-100: #0d366b;
+    --heat-200: #104281;
+    --heat-300: #184f95;
+    --heat-400: #1c5cab;
+    --heat-500: #256abf;
+    --heat-600: #2a78d6;
+    --heat-700: #5598e7;
+    --heat-ink-light: #08111f;
+    --heat-ink-dark: #eaf3ff;
+    --heat-stripe: rgba(255, 255, 255, 0.12);
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+}
