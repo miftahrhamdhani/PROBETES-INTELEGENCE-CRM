@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseDatabaseAll } from "@/server/import/database-all-parser";
+import { assertDatabaseAllColumns, parseDatabaseAll } from "@/server/import/database-all-parser";
 import { parseGroupListRows } from "@/server/import/group-list-parser";
 import { parseKsbRows } from "@/server/import/ksb-parser";
+import { sourceValue } from "@/server/import/source-row";
 import type { SourceRow } from "@/server/import/types";
 
 function row(rowNumber: number, values: Record<string, unknown>): SourceRow {
@@ -137,6 +138,41 @@ describe("Database All parser", () => {
     ]);
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0]?.items[0]?.productFlags.code).toBe("UNKNOWN");
+  });
+
+  // Export CSV "database update juli.csv" (master order tracking, bukan sheet
+  // "allbaru") pakai "Tanggal" untuk kolom yang sama secara semantik dengan
+  // "Tanggal Pesanan" — lihat COLUMN_ALIASES di source-row.ts.
+  it("kolom 'Tanggal' diterima sebagai alias 'Tanggal Pesanan' (varian export CSV)", () => {
+    expect(() => assertDatabaseAllColumns(["Tanggal", "Customer", "No. HP", "Produk 1", "Nilai Produk"])).not.toThrow();
+
+    const result = parseDatabaseAll([
+      row(2, {
+        ...BASE,
+        Tanggal: "05/01/2026",
+        "Produk 1": "Ebook 90",
+        "Qty 1": 1,
+        "Nilai Produk": 89_000,
+        idpesan: "ORDER-ALIAS",
+      }),
+    ]);
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0]?.orderDate).toBe("2026-01-05");
+  });
+
+  it("assertDatabaseAllColumns tetap menolak kalau 'Tanggal Pesanan' maupun alias 'Tanggal' tidak ada", () => {
+    expect(() => assertDatabaseAllColumns(["Customer", "No. HP", "Produk 1", "Nilai Produk"])).toThrow(
+      /Tanggal Pesanan/
+    );
+  });
+
+  it("sourceValue tidak salah ambil kolom tanggal lain yang mirip (rekonsiliasi/status penerimaan)", () => {
+    const r = row(2, {
+      "Tanggal rekonsiliasi": "01/02/2026",
+      Tgl_Status_Penerimaan: "03/02/2026",
+      Tanggal: "05/01/2026",
+    });
+    expect(sourceValue(r, "Tanggal Pesanan")).toBe("05/01/2026");
   });
 });
 

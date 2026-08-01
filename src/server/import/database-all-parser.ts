@@ -4,7 +4,7 @@ import { normalizePhone } from "../normalize/phone";
 import { classifyProduct } from "../normalize/product-catalog";
 import { cleanText, normalizeForMatching } from "../normalize/text";
 import { buildKsbTransactionKey } from "./ksb-parser";
-import { sourceValue as value } from "./source-row";
+import { hasColumn, sourceValue as value } from "./source-row";
 import type {
   DatabaseAllParseResult,
   ExcludedRow,
@@ -25,7 +25,7 @@ export const DATABASE_ALL_REQUIRED_COLUMNS = [
 
 export function assertDatabaseAllColumns(headers: string[]): void {
   const normalized = new Set(headers.map((h) => h.trim()));
-  const missing = DATABASE_ALL_REQUIRED_COLUMNS.filter((h) => !normalized.has(h));
+  const missing = DATABASE_ALL_REQUIRED_COLUMNS.filter((h) => !hasColumn(normalized, h));
   if (missing.length) throw new Error(`Kolom wajib Database All tidak ditemukan: ${missing.join(", ")}`);
 }
 
