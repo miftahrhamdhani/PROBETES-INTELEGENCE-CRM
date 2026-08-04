@@ -2,22 +2,20 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Info, Loader2, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { createCrmReportAction, updateCrmReportAction } from "@/app/crm-reports-actions";
+import { CrmReportManager } from "@/components/crm-report/crm-report-manager";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { formatRupiah } from "@/lib/format";
+import { calculateCrmReportTotals, parseCrmNumber } from "@/lib/crm-report-calculation";
 import { MAX_CRM_REPORT_ITEMS } from "@/lib/crm-report-contracts";
-import type { CrmReportDetail } from "@/lib/crm-report-types";
+import type { CrmReportDetail, CrmReportListResult, CrmReportRow } from "@/lib/crm-report-types";
+import { formatRupiah } from "@/lib/format";
 
 interface ItemForm {
   productName: string;
   qty: string;
   productValue: string;
-  itemNote: string;
 }
 
 interface ReportForm {
@@ -51,12 +49,33 @@ interface ReportForm {
   crmMarketingCost: string;
 }
 
+type SheetField = {
+  key: Exclude<keyof ReportForm, "items">;
+  label: string;
+  type?: "date" | "number";
+  options?: string[];
+  required?: boolean;
+  uppercase?: boolean;
+  min?: number;
+  placeholder?: string;
+};
+
+const EXPEDITION_OPTIONS = ["JNE", "J&T", "SICEPAT", "ANTERAJA", "NINJA", "POS INDONESIA", "LION PARCEL", "GOSEND", "GRABEXPRESS", "DIGITAL"];
+const PAYMENT_OPTIONS = ["TRANSFER", "COD", "MARKETPLACE", "QRIS", "CASH"];
+const HUB_OPTIONS = ["JAKARTA", "BANDUNG", "SURABAYA", "YOGYAKARTA", "MEDAN", "MAKASSAR", "DIGITAL"];
+const SALES_TYPE_OPTIONS = ["CLOSING", "REPEAT ORDER", "UPSELL", "RESELLER"];
+const PLATFORM_OPTIONS = ["META", "SHOPEE", "TIKTOK", "WHATSAPP", "WEBSITE"];
+const DIVISION_OPTIONS = ["CRM", "AKUISISI", "TIKTOK MP"];
+const EMPTY_ITEM: ItemForm = { productName: "", qty: "", productValue: "" };
+
 function todayKey(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const EMPTY_ITEM: ItemForm = { productName: "", qty: "1", productValue: "0", itemNote: "" };
+function upper(value: string): string {
+  return value.toLocaleUpperCase("id-ID");
+}
 
 function emptyForm(): ReportForm {
   return {
@@ -66,7 +85,7 @@ function emptyForm(): ReportForm {
     expedition: "",
     memo: "",
     paymentMethod: "",
-    items: [{ ...EMPTY_ITEM }],
+    items: Array.from({ length: MAX_CRM_REPORT_ITEMS }, () => ({ ...EMPTY_ITEM })),
     shippingCost: "0",
     packingCost: "0",
     discount: "0",
@@ -80,7 +99,7 @@ function emptyForm(): ReportForm {
     orderClosingCount: "",
     salesType: "",
     platform: "",
-    division: "",
+    division: "CRM",
     dataReceivedCount: "",
     crmVoucher: "",
     codValue: "0",
@@ -92,6 +111,10 @@ function emptyForm(): ReportForm {
 }
 
 function formFromDetail(detail: CrmReportDetail): ReportForm {
+  const items = Array.from({ length: MAX_CRM_REPORT_ITEMS }, (_, index) => {
+    const item = detail.items[index];
+    return item ? { productName: item.productName, qty: item.qty, productValue: item.productValue } : { ...EMPTY_ITEM };
+  });
   return {
     customerName: detail.customerName,
     phone: detail.phone,
@@ -99,9 +122,7 @@ function formFromDetail(detail: CrmReportDetail): ReportForm {
     expedition: detail.expedition ?? "",
     memo: detail.memo ?? "",
     paymentMethod: detail.paymentMethod ?? "",
-    items: detail.items.length
-      ? detail.items.map((i) => ({ productName: i.productName, qty: i.qty, productValue: i.productValue, itemNote: i.itemNote ?? "" }))
-      : [{ ...EMPTY_ITEM }],
+    items,
     shippingCost: detail.shippingCost,
     packingCost: detail.packingCost,
     discount: detail.discount,
@@ -115,7 +136,7 @@ function formFromDetail(detail: CrmReportDetail): ReportForm {
     orderClosingCount: detail.orderClosingCount != null ? String(detail.orderClosingCount) : "",
     salesType: detail.salesType ?? "",
     platform: detail.platform ?? "",
-    division: detail.division ?? "",
+    division: detail.division ?? "CRM",
     dataReceivedCount: detail.dataReceivedCount != null ? String(detail.dataReceivedCount) : "",
     crmVoucher: detail.crmVoucher ?? "",
     codValue: detail.codValue,
@@ -126,30 +147,24 @@ function formFromDetail(detail: CrmReportDetail): ReportForm {
   };
 }
 
-function n(value: string): number {
-  const parsed = Number(String(value).replace(/[^\d.-]/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+function money(value: number): string {
+  return formatRupiah(BigInt(Math.max(0, Math.round(value))));
 }
 
-/**
- * Halaman penuh Input/Edit Laporan CRM — pengganti CrmReportFormDialog (modal).
- * Backend TIDAK berubah: tetap createCrmReportAction/updateCrmReportAction,
- * crm_reports/crm_report_items, dan "CRM Report BUKAN canonical order".
- * Redesign murni layout & pengalaman input (workspace penuh, tabel produk
- * spreadsheet-style, panel ringkasan kanan yang real-time).
- */
 export function CrmReportWorkspaceForm({
   mode,
   reportId,
   initialData,
   productNameOptions,
   platformOptions,
+  initialList,
 }: {
   mode: "create" | "edit";
   reportId?: number;
   initialData?: CrmReportDetail | null;
   productNameOptions: string[];
   platformOptions: string[];
+  initialList: CrmReportListResult;
 }) {
   const router = useRouter();
   const initialForm = React.useMemo(() => (initialData ? formFromDetail(initialData) : emptyForm()), [initialData]);
@@ -157,76 +172,147 @@ export function CrmReportWorkspaceForm({
   const [saving, setSaving] = React.useState<"save" | "save-new" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
-  const productNameRefs = React.useRef<Array<HTMLInputElement | null>>([]);
+  const [listReloadKey, setListReloadKey] = React.useState(0);
+  const customerNameRef = React.useRef<HTMLInputElement | null>(null);
+  const sheetRef = React.useRef<HTMLDivElement | null>(null);
 
-  const totalProduk = form.items.reduce((sum, item) => sum + n(item.qty) * n(item.productValue), 0);
-  const totalBayar = totalProduk + n(form.shippingCost) + n(form.packingCost) + n(form.adminCod) - n(form.discount);
+  const { totalProductValue, totalPayment } = calculateCrmReportTotals(form.items, {
+    shippingCost: form.shippingCost,
+    packingCost: form.packingCost,
+    discount: form.discount,
+    adminCod: form.adminCod,
+  });
+  const totalQty = form.items.reduce((sum, item) => sum + parseCrmNumber(item.qty), 0);
+  const productSummary = form.items
+    .filter((item) => item.productName.trim())
+    .map((item) => `${item.productName}${item.qty ? ` x${item.qty}` : ""}`)
+    .join(", ");
+  const mergedPlatformOptions = [...new Set([...PLATFORM_OPTIONS, ...platformOptions.map(upper)])];
+  const previewRow: CrmReportRow = {
+    id: -1,
+    customerId: null,
+    customerName: form.customerName || "—",
+    phone: form.phone || "—",
+    address: form.address || null,
+    city: form.city || null,
+    recipientDistrict: form.recipientDistrict || null,
+    expedition: form.expedition || null,
+    paymentMethod: form.paymentMethod || null,
+    csName: form.csName || null,
+    advName: form.advName || null,
+    platform: form.platform || null,
+    division: form.division || null,
+    salesType: form.salesType || null,
+    reportDate: form.reportDate,
+    totalQty: String(totalQty),
+    totalProductValue: String(totalProductValue),
+    shippingCost: String(parseCrmNumber(form.shippingCost)),
+    packingCost: String(parseCrmNumber(form.packingCost)),
+    discount: String(parseCrmNumber(form.discount)),
+    adminCod: String(parseCrmNumber(form.adminCod)),
+    totalPayment: String(totalPayment),
+    itemsSummary: productSummary || "—",
+    archivedAt: null,
+    createdByName: null,
+    taskId: null,
+    taskType: null,
+    taskStatus: null,
+    taskOutcome: null,
+    taskPicName: null,
+  };
+
+  const customerFields: SheetField[] = [
+    { key: "customerName", label: "Nama Konsumen", required: true, uppercase: true, placeholder: "NAMA KONSUMEN" },
+    { key: "phone", label: "No HP", required: true, placeholder: "08xxxxxxxxxx" },
+    { key: "reportDate", label: "Tanggal", type: "date", required: true },
+    { key: "city", label: "Kota", uppercase: true },
+    { key: "recipientDistrict", label: "Kecamatan Penerima", uppercase: true },
+    { key: "recipientPostalCode", label: "Kode Pos Penerima" },
+    { key: "address", label: "Alamat", uppercase: true },
+    { key: "expedition", label: "Ekspedisi", uppercase: true, options: EXPEDITION_OPTIONS },
+    { key: "hub", label: "Hub", uppercase: true, options: HUB_OPTIONS },
+    { key: "partner", label: "Mitra", uppercase: true },
+  ];
+  const salesFields: SheetField[] = [
+    { key: "memo", label: "Memo", uppercase: true },
+    { key: "paymentMethod", label: "Pembayaran", uppercase: true, options: PAYMENT_OPTIONS },
+    { key: "csName", label: "Nama CS", uppercase: true },
+    { key: "advName", label: "Nama ADV", uppercase: true },
+    { key: "platform", label: "Platform", uppercase: true, options: mergedPlatformOptions },
+    { key: "division", label: "Divisi", uppercase: true, options: DIVISION_OPTIONS },
+    { key: "salesType", label: "Type Sales", uppercase: true, options: SALES_TYPE_OPTIONS },
+    { key: "orderClosingCount", label: "Jumlah Order Closing", type: "number", min: 0 },
+    { key: "dataReceivedCount", label: "Jumlah Terima Data", type: "number", min: 0 },
+    { key: "shippingCost", label: "Ongkir", type: "number", min: 0 },
+    { key: "packingCost", label: "Packing", type: "number", min: 0 },
+    { key: "discount", label: "Diskon", type: "number", min: 0 },
+    { key: "adminCod", label: "Admin COD", type: "number", min: 0 },
+    { key: "crmVoucher", label: "Voucher CRM" },
+    { key: "codValue", label: "Nilai COD", type: "number", min: 0 },
+    { key: "crmMarketingCost", label: "Biaya Marketing CRM", type: "number", min: 0 },
+    { key: "note", label: "Note", uppercase: true },
+  ];
 
   function updateField<K extends keyof ReportForm>(key: K, value: ReportForm[K]) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((current) => ({ ...current, [key]: value }));
   }
+
   function updateItem(index: number, patch: Partial<ItemForm>) {
-    setForm((f) => ({ ...f, items: f.items.map((it, i) => (i === index ? { ...it, ...patch } : it)) }));
+    setForm((current) => ({
+      ...current,
+      items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
+    }));
   }
-  function addItem(focus = false) {
-    setForm((f) => {
-      if (f.items.length >= MAX_CRM_REPORT_ITEMS) return f;
-      const next = { ...f, items: [...f.items, { ...EMPTY_ITEM }] };
-      if (focus) {
-        const newIndex = next.items.length - 1;
-        requestAnimationFrame(() => productNameRefs.current[newIndex]?.focus());
-      }
-      return next;
-    });
-  }
-  function removeItem(index: number) {
-    setForm((f) => (f.items.length <= 1 ? f : { ...f, items: f.items.filter((_, i) => i !== index) }));
-  }
-  function handleRowKeyDown(e: React.KeyboardEvent<HTMLInputElement>, index: number) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    if (index === form.items.length - 1) addItem(true);
-    else productNameRefs.current[index + 1]?.focus();
+
+  function handleWorksheetEnter(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    const cells = Array.from(sheetRef.current?.querySelectorAll<HTMLElement>("input:not(:disabled), select:not(:disabled)") ?? []);
+    const index = cells.indexOf(target);
+    if (index < 0 || index >= cells.length - 1) return;
+    event.preventDefault();
+    cells[index + 1]?.focus();
   }
 
   function buildPayload() {
     return {
-      customerName: form.customerName,
+      customerName: upper(form.customerName),
       phone: form.phone,
-      address: form.address || null,
-      expedition: form.expedition || null,
-      memo: form.memo || null,
-      paymentMethod: form.paymentMethod || null,
+      address: form.address ? upper(form.address) : null,
+      expedition: form.expedition ? upper(form.expedition) : null,
+      memo: form.memo ? upper(form.memo) : null,
+      paymentMethod: form.paymentMethod ? upper(form.paymentMethod) : null,
       items: form.items
-        .filter((i) => i.productName.trim())
-        .map((i) => ({
-          productName: i.productName,
-          qty: n(i.qty) || 1,
-          productValue: n(i.productValue),
-          itemNote: i.itemNote || null,
+        .filter((item) => item.productName.trim())
+        .map((item) => ({
+          productName: upper(item.productName),
+          qty: parseCrmNumber(item.qty) || 1,
+          productValue: parseCrmNumber(item.productValue),
+          itemNote: null,
         })),
-      shippingCost: n(form.shippingCost),
-      packingCost: n(form.packingCost),
-      discount: n(form.discount),
-      adminCod: n(form.adminCod),
-      totalPayment: totalBayar,
-      csName: form.csName || null,
-      advName: form.advName || null,
-      note: form.note || null,
-      hub: form.hub || null,
-      city: form.city || null,
+      shippingCost: parseCrmNumber(form.shippingCost),
+      packingCost: parseCrmNumber(form.packingCost),
+      discount: parseCrmNumber(form.discount),
+      adminCod: parseCrmNumber(form.adminCod),
+      totalPayment,
+      csName: form.csName ? upper(form.csName) : null,
+      advName: form.advName ? upper(form.advName) : null,
+      note: form.note ? upper(form.note) : null,
+      hub: form.hub ? upper(form.hub) : null,
+      city: form.city ? upper(form.city) : null,
       reportDate: form.reportDate,
       orderClosingCount: form.orderClosingCount ? Number(form.orderClosingCount) : null,
-      salesType: form.salesType || null,
-      platform: form.platform || null,
-      division: form.division || null,
+      salesType: form.salesType ? upper(form.salesType) : null,
+      platform: form.platform ? upper(form.platform) : null,
+      division: upper(form.division || "CRM"),
       dataReceivedCount: form.dataReceivedCount ? Number(form.dataReceivedCount) : null,
       crmVoucher: form.crmVoucher || null,
-      codValue: n(form.codValue),
-      recipientDistrict: form.recipientDistrict || null,
+      codValue: parseCrmNumber(form.codValue),
+      recipientDistrict: form.recipientDistrict ? upper(form.recipientDistrict) : null,
       recipientPostalCode: form.recipientPostalCode || null,
-      partner: form.partner || null,
-      crmMarketingCost: n(form.crmMarketingCost),
+      partner: form.partner ? upper(form.partner) : null,
+      crmMarketingCost: parseCrmNumber(form.crmMarketingCost),
     };
   }
 
@@ -236,27 +322,23 @@ export function CrmReportWorkspaceForm({
     setSuccess(null);
     try {
       const payload = buildPayload();
-      if (payload.items.length === 0) throw new Error("Minimal satu produk harus diisi");
+      if (!payload.customerName.trim()) throw new Error("Nama Konsumen wajib diisi");
+      if (!payload.phone.trim()) throw new Error("No HP wajib diisi");
+      if (payload.items.length === 0) throw new Error("Minimal Produk 1 harus diisi");
 
-      if (mode === "edit" && reportId) {
-        await updateCrmReportAction(reportId, payload);
-      } else {
-        await createCrmReportAction(payload);
-      }
+      if (mode === "edit" && reportId) await updateCrmReportAction(reportId, payload);
+      else await createCrmReportAction(payload);
 
+      setSuccess("Laporan berhasil disimpan.");
+      toast.success("Laporan berhasil disimpan");
+      setListReloadKey((key) => key + 1);
       if (intent === "save-new") {
-        if (mode === "edit") {
-          router.push("/workspace/input-kerja/baru");
-          return;
-        }
         setForm(emptyForm());
-        setSuccess("Laporan tersimpan — silakan input laporan berikutnya.");
-        productNameRefs.current[0]?.focus();
-      } else {
-        router.push("/workspace/input-kerja");
+        requestAnimationFrame(() => customerNameRef.current?.focus());
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Gagal menyimpan laporan");
+      router.refresh();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Gagal menyimpan laporan");
     } finally {
       setSaving(null);
     }
@@ -266,310 +348,181 @@ export function CrmReportWorkspaceForm({
     setForm(initialForm);
     setError(null);
     setSuccess(null);
-  }
-
-  function handleCancel() {
-    router.back();
+    requestAnimationFrame(() => customerNameRef.current?.focus());
   }
 
   const busy = saving !== null;
 
-  const actionButtons = (
-    <div className="flex flex-wrap items-center justify-end gap-2">
-      <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={busy}>
-        Batal
-      </Button>
-      <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={busy}>
-        Reset
-      </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => handleSave("save-new")} disabled={busy}>
-        {saving === "save-new" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-        Simpan &amp; Tambah Baru
-      </Button>
-      <Button type="button" size="sm" onClick={() => handleSave("save")} disabled={busy}>
-        {saving === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-        Simpan
-      </Button>
-    </div>
-  );
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">Catat transaksi closing manual dari customer — bukan order kanonik.</p>
-        {actionButtons}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Worksheet laporan closing CRM — terpisah dari order kanonik Database All.</p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={busy}>Batal</Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={busy}>Reset</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => handleSave("save-new")} disabled={busy}>
+            {saving === "save-new" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+            Simpan &amp; Tambah Baru
+          </Button>
+          <Button type="button" size="sm" onClick={() => handleSave("save")} disabled={busy}>
+            {saving === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+            Simpan
+          </Button>
+        </div>
       </div>
 
-      {error ? <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p> : null}
       {success ? (
-        <p className="flex items-center gap-1.5 rounded-md border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> {success}
+        <p role="status" className="flex items-center gap-1.5 border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> {success}
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_320px] xl:items-start">
-        {/* Kolom utama */}
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="grid grid-cols-2 gap-x-4 gap-y-3 p-4 sm:grid-cols-3 xl:grid-cols-4">
-              <Field label="Nama Konsumen" required>
-                <Input value={form.customerName} onChange={(e) => updateField("customerName", e.target.value)} placeholder="Nama customer" />
-              </Field>
-              <Field label="No HP" required>
-                <Input value={form.phone} onChange={(e) => updateField("phone", e.target.value)} placeholder="0812xxxxxxx" />
-              </Field>
-              <Field label="Tanggal" required>
-                <Input type="date" value={form.reportDate} onChange={(e) => updateField("reportDate", e.target.value)} />
-              </Field>
-              <Field label="Kota">
-                <Input value={form.city} onChange={(e) => updateField("city", e.target.value)} />
-              </Field>
+      <div ref={sheetRef} className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)] xl:items-start" onKeyDown={handleWorksheetEnter}>
+        <div className="overflow-x-auto border bg-card">
+          <div className="grid min-w-[1140px] grid-cols-[0.95fr_1.1fr_1fr] divide-x">
+            <SheetBlock title="Data Konsumen">
+              {customerFields.map((field) => (
+                <SheetFieldRow
+                  key={field.key}
+                  field={field}
+                  value={String(form[field.key])}
+                  inputRef={field.key === "customerName" ? customerNameRef : undefined}
+                  onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
+                />
+              ))}
+            </SheetBlock>
 
-              <Field label="Alamat" full>
-                <Textarea rows={2} value={form.address} onChange={(e) => updateField("address", e.target.value)} />
-              </Field>
+            <SheetBlock title="Detail Produk">
+              {form.items.flatMap((item, index) => [
+                <SheetProductRow key={`product-${index}`} label={`Produk ${index + 1}`} value={item.productName} options={productNameOptions} required={index === 0} onChange={(value) => updateItem(index, { productName: upper(value) })} />,
+                <SheetProductRow key={`qty-${index}`} label={`QTY ${index + 1}`} type="number" value={item.qty} min={0} onChange={(value) => updateItem(index, { qty: value })} />,
+                <SheetProductRow key={`value-${index}`} label={`Nilai Produk ${index + 1}`} type="number" value={item.productValue} min={0} onChange={(value) => updateItem(index, { productValue: value })} />,
+              ])}
+            </SheetBlock>
 
-              <Field label="Kecamatan Penerima">
-                <Input value={form.recipientDistrict} onChange={(e) => updateField("recipientDistrict", e.target.value)} />
-              </Field>
-              <Field label="Kode Pos Penerima">
-                <Input value={form.recipientPostalCode} onChange={(e) => updateField("recipientPostalCode", e.target.value)} />
-              </Field>
-              <Field label="Ekspedisi">
-                <Input value={form.expedition} onChange={(e) => updateField("expedition", e.target.value)} placeholder="mis. JNE" />
-              </Field>
-              <Field label="Hub">
-                <Input value={form.hub} onChange={(e) => updateField("hub", e.target.value)} />
-              </Field>
-              <Field label="Mitra">
-                <Input value={form.partner} onChange={(e) => updateField("partner", e.target.value)} />
-              </Field>
-              <Field label="Pembayaran">
-                <Input value={form.paymentMethod} onChange={(e) => updateField("paymentMethod", e.target.value)} placeholder="mis. Transfer / COD" />
-              </Field>
-              <Field label="Nama CS">
-                <Input value={form.csName} onChange={(e) => updateField("csName", e.target.value)} />
-              </Field>
-              <Field label="Nama ADV">
-                <Input value={form.advName} onChange={(e) => updateField("advName", e.target.value)} />
-              </Field>
-              <Field label="Platform">
-                <Input list="platform-options" value={form.platform} onChange={(e) => updateField("platform", e.target.value)} />
-                <datalist id="platform-options">
-                  {platformOptions.map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                </datalist>
-              </Field>
-              <Field label="Divisi">
-                <Input value={form.division} onChange={(e) => updateField("division", e.target.value)} />
-              </Field>
-              <Field label="Type Sales">
-                <Input value={form.salesType} onChange={(e) => updateField("salesType", e.target.value)} />
-              </Field>
-              <Field label="Jumlah Order Closing">
-                <Input type="number" min={0} value={form.orderClosingCount} onChange={(e) => updateField("orderClosingCount", e.target.value)} />
-              </Field>
-              <Field label="Jumlah Terima Data">
-                <Input type="number" min={0} value={form.dataReceivedCount} onChange={(e) => updateField("dataReceivedCount", e.target.value)} />
-              </Field>
-              <Field label="Voucher CRM">
-                <Input value={form.crmVoucher} onChange={(e) => updateField("crmVoucher", e.target.value)} />
-              </Field>
-              <Field label="Nilai COD">
-                <Input type="number" min={0} value={form.codValue} onChange={(e) => updateField("codValue", e.target.value)} />
-              </Field>
-              <Field label="Biaya Marketing CRM">
-                <Input type="number" min={0} value={form.crmMarketingCost} onChange={(e) => updateField("crmMarketingCost", e.target.value)} />
-              </Field>
-              <Field label="Catatan / Memo" full>
-                <Textarea rows={2} value={form.memo} onChange={(e) => updateField("memo", e.target.value)} />
-              </Field>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <th className="w-10 px-2 py-2.5 text-center">No</th>
-                      <th className="px-2 py-2.5 text-left">Nama Produk</th>
-                      <th className="w-24 px-2 py-2.5 text-center">Qty</th>
-                      <th className="w-36 px-2 py-2.5 text-right">Nilai Produk (Rp)</th>
-                      <th className="px-2 py-2.5 text-left">Catatan Item</th>
-                      <th className="w-12 px-2 py-2.5 text-center">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {form.items.map((item, index) => (
-                      <tr key={index} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="px-2 text-center text-xs tabular text-muted-foreground">{index + 1}</td>
-                        <td className="p-0">
-                          <input
-                            ref={(el) => {
-                              productNameRefs.current[index] = el;
-                            }}
-                            list="product-name-options"
-                            className="h-10 w-full border-0 bg-transparent px-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                            value={item.productName}
-                            onChange={(e) => updateItem(index, { productName: e.target.value })}
-                            onKeyDown={(e) => handleRowKeyDown(e, index)}
-                            placeholder="Nama produk"
-                          />
-                        </td>
-                        <td className="p-0">
-                          <input
-                            type="number"
-                            min={1}
-                            className="h-10 w-full border-0 bg-transparent px-2 text-center text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                            value={item.qty}
-                            onChange={(e) => updateItem(index, { qty: e.target.value })}
-                            onKeyDown={(e) => handleRowKeyDown(e, index)}
-                          />
-                        </td>
-                        <td className="p-0">
-                          <input
-                            type="number"
-                            min={0}
-                            className="h-10 w-full border-0 bg-transparent px-2 text-right text-sm tabular outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                            value={item.productValue}
-                            onChange={(e) => updateItem(index, { productValue: e.target.value })}
-                            onKeyDown={(e) => handleRowKeyDown(e, index)}
-                          />
-                        </td>
-                        <td className="p-0">
-                          <input
-                            className="h-10 w-full border-0 bg-transparent px-2 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-ring"
-                            value={item.itemNote}
-                            onChange={(e) => updateItem(index, { itemNote: e.target.value })}
-                            onKeyDown={(e) => handleRowKeyDown(e, index)}
-                            placeholder="—"
-                          />
-                        </td>
-                        <td className="px-1 text-center">
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => removeItem(index)}
-                            disabled={form.items.length <= 1}
-                            aria-label="Hapus baris"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <datalist id="product-name-options">
-                  {productNameOptions.map((p) => (
-                    <option key={p} value={p} />
-                  ))}
-                </datalist>
+            <SheetBlock title="Sales dan Nilai">
+              {salesFields.map((field) => (
+                <SheetFieldRow
+                  key={field.key}
+                  field={field}
+                  value={String(form[field.key])}
+                  onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
+                />
+              ))}
+              <div className="grid min-h-9 grid-cols-[130px_22px_minmax(0,1fr)] border-b bg-primary/5 text-xs font-semibold">
+                <span className="px-2 py-2">Total Bayar</span><span className="border-x px-1 py-2 text-center">:</span><span className="px-2 py-2 text-right tabular">{money(totalPayment)}</span>
               </div>
-              <div className="flex items-center justify-between border-t px-3 py-2.5">
-                <Button type="button" size="sm" variant="outline" onClick={() => addItem(true)} disabled={form.items.length >= MAX_CRM_REPORT_ITEMS}>
-                  <Plus className="h-3.5 w-3.5" /> Tambah Baris
-                </Button>
-                <p className="text-[11px] text-muted-foreground">Maksimal {MAX_CRM_REPORT_ITEMS} item produk</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="flex justify-end">{actionButtons}</div>
+            </SheetBlock>
+          </div>
         </div>
 
-        {/* Panel kanan */}
-        <div className="space-y-4 xl:sticky xl:top-20">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Ringkasan Perhitungan</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 pt-0 text-xs">
-              <SummaryRow label="Total Nilai Produk" value={totalProduk} />
-              <SummaryRow label="Ongkir" value={n(form.shippingCost)} />
-              <SummaryRow label="Packing" value={n(form.packingCost)} />
-              <SummaryRow label="Diskon" value={-n(form.discount)} />
-              <SummaryRow label="Admin COD" value={n(form.adminCod)} />
-              <div className="mt-2 border-t pt-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide">Total Bayar</span>
-                  <span className="text-lg font-bold tabular text-primary">{formatRupiah(BigInt(Math.max(0, Math.round(totalBayar))))}</span>
-                </div>
-              </div>
-              <div className="mt-2 flex items-start gap-1.5 rounded-md bg-muted p-2 text-[11px] text-muted-foreground">
-                <Info className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
-                <span>Total diperbarui otomatis — pastikan semua nilai sudah sesuai sebelum menyimpan.</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Catatan Internal</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <Textarea
-                rows={4}
-                maxLength={2000}
-                value={form.note}
-                onChange={(e) => updateField("note", e.target.value)}
-                placeholder="Catatan internal untuk tim (tidak tampil ke customer)"
-              />
-              <p className="mt-1 text-right text-[10px] text-muted-foreground">{form.note.length}/2000 karakter</p>
-            </CardContent>
-          </Card>
-
-          <Card className="border-dashed">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">Tips Input Cepat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1.5 pt-0 text-[11px] text-muted-foreground">
-              <TipRow>Gunakan Tab/Enter untuk berpindah field</TipRow>
-              <TipRow>Isi Nama Produk lalu tekan Enter untuk tambah baris cepat</TipRow>
-              <TipRow>Pastikan No HP valid untuk menghindari duplikasi customer</TipRow>
-            </CardContent>
-          </Card>
-        </div>
+        <aside className="border bg-card xl:sticky xl:top-20">
+          <h2 className="border-b px-4 py-3 text-sm font-semibold">Ringkasan Perhitungan</h2>
+          <div className="divide-y text-xs">
+            <SummaryRow label="Total Nilai Produk" value={totalProductValue} />
+            <SummaryRow label="Ongkir" value={parseCrmNumber(form.shippingCost)} />
+            <SummaryRow label="Packing" value={parseCrmNumber(form.packingCost)} />
+            <SummaryRow label="Diskon" value={parseCrmNumber(form.discount)} negative />
+            <SummaryRow label="Admin COD" value={parseCrmNumber(form.adminCod)} />
+            <div className="grid grid-cols-[1fr_auto] items-center gap-4 bg-primary/5 px-4 py-4">
+              <span className="text-sm font-bold uppercase">Total Bayar</span>
+              <span className="text-2xl font-black tabular text-primary">{money(totalPayment)}</span>
+            </div>
+          </div>
+        </aside>
       </div>
+
+      <section className="space-y-3 border bg-card p-3">
+        <div>
+          <h2 className="text-sm font-semibold">Preview Tabel Hasil Input</h2>
+          <p className="text-[11px] text-muted-foreground">Baris pertama adalah draft realtime. Baris berikutnya adalah seluruh laporan tersimpan; klik untuk edit, menu aksi untuk archive, export memakai filter existing.</p>
+        </div>
+        <CrmReportManager
+          filter={{}}
+          initialData={initialList}
+          exportQuery=""
+          previewRow={previewRow}
+          reloadKey={listReloadKey}
+          hideInputAction
+        />
+      </section>
     </div>
   );
 }
 
-function Field({ label, children, full, required }: { label: string; children: React.ReactNode; full?: boolean; required?: boolean }) {
+function SheetBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section><h2 className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 text-[11px] font-bold uppercase tracking-wide">{title}</h2>{children}</section>;
+}
+
+function SheetFieldRow({
+  field,
+  value,
+  onChange,
+  inputRef,
+}: {
+  field: SheetField;
+  value: string;
+  onChange: (value: string) => void;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
   return (
-    <div className={full ? "col-span-full space-y-1" : "space-y-1"}>
-      <Label className="text-[11px]">
-        {label}
-        {required ? <span className="ml-0.5 text-destructive">*</span> : null}
-      </Label>
-      {children}
-    </div>
+    <label className="grid min-h-9 grid-cols-[130px_22px_minmax(0,1fr)] border-b text-xs last:border-b-0">
+      <span className="px-2 py-2 font-medium">{field.label}{field.required ? <span className="text-destructive"> *</span> : null}</span>
+      <span className="border-x px-1 py-2 text-center text-muted-foreground">:</span>
+      {field.options ? (
+        <select aria-label={field.label} className="h-9 min-w-0 border-0 bg-transparent px-2 uppercase outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary" value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">— PILIH —</option>
+          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      ) : (
+        <input
+          ref={inputRef}
+          aria-label={field.label}
+          className="h-9 min-w-0 border-0 bg-transparent px-2 outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary"
+          type={field.type ?? "text"}
+          min={field.min}
+          required={field.required}
+          value={value}
+          placeholder={field.placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
+    </label>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: number }) {
-  const negative = value < 0;
+function SheetProductRow({
+  label,
+  value,
+  onChange,
+  options,
+  type = "text",
+  min,
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options?: string[];
+  type?: "text" | "number";
+  min?: number;
+  required?: boolean;
+}) {
+  const listId = options ? "crm-product-options" : undefined;
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={negative ? "tabular text-destructive" : "tabular"}>
-        {negative ? "-" : ""}
-        {formatRupiah(BigInt(Math.round(Math.abs(value))))}
+    <label className="grid min-h-9 grid-cols-[118px_22px_minmax(0,1fr)] border-b text-xs">
+      <span className="px-2 py-2 font-medium">{label}{required ? <span className="text-destructive"> *</span> : null}</span>
+      <span className="border-x px-1 py-2 text-center text-muted-foreground">:</span>
+      <span className="contents">
+        <input aria-label={label} list={listId} type={type} min={min} required={required} className="h-9 min-w-0 border-0 bg-transparent px-2 outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary" value={value} onChange={(event) => onChange(event.target.value)} />
+        {options ? <datalist id={listId}>{options.map((option) => <option key={option} value={upper(option)} />)}</datalist> : null}
       </span>
-    </div>
+    </label>
   );
 }
 
-function TipRow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-1.5">
-      <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-green-600 dark:text-green-400" aria-hidden="true" />
-      <span>{children}</span>
-    </div>
-  );
+function SummaryRow({ label, value, negative = false }: { label: string; value: number; negative?: boolean }) {
+  return <div className="grid grid-cols-[1fr_auto] gap-4 px-4 py-3"><span>{label}</span><span className={negative && value ? "tabular text-destructive" : "tabular"}>{negative && value ? "-" : ""}{money(value)}</span></div>;
 }
+

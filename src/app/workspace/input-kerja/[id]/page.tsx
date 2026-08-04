@@ -1,4 +1,4 @@
-import { loadCrmReportDetail, loadReportPlatforms, loadReportProductNames } from "@/app/crm-reports-actions";
+import { loadCrmReportDetail, loadCrmReportList, loadReportPlatforms, loadReportProductNames } from "@/app/crm-reports-actions";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CrmReportWorkspaceForm } from "@/components/crm-report/crm-report-workspace-form";
@@ -25,11 +25,13 @@ export default async function EditLaporanPage({ params }: { params: Promise<{ id
   let detail;
   let productNameOptions: string[] = [];
   let platformOptions: string[] = [];
+  let initialList;
   try {
-    [detail, productNameOptions, platformOptions] = await Promise.all([
+    [detail, productNameOptions, platformOptions, initialList] = await Promise.all([
       loadCrmReportDetail(reportId),
       loadReportProductNames(),
       loadReportPlatforms(),
+      loadCrmReportList({ page: 1, perPage: 60 }),
     ]);
   } catch {
     return (
@@ -65,6 +67,7 @@ export default async function EditLaporanPage({ params }: { params: Promise<{ id
         initialData={detail}
         productNameOptions={productNameOptions}
         platformOptions={platformOptions}
+        initialList={initialList}
       />
     </AppShell>
   );

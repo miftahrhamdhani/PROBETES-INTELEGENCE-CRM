@@ -12,3 +12,18 @@ export async function AppShell({ title, children }: { title: string; children: R
   }));
   return <AppShellClient title={title} dataset={dataset}>{children}</AppShellClient>;
 }
+
+/**
+ * Versi untuk loading.tsx — TANPA query dataset, supaya skeleton muncul seketika
+ * saat sidebar diklik dan tidak ikut menunggu round-trip DB.
+ */
+export function AppShellSkeleton({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <AppShellClient
+      title={title}
+      dataset={{ asOfDate: null, databaseAllActive: false, ksbActive: false, groupListActive: false }}
+    >
+      {children}
+    </AppShellClient>
+  );
+}

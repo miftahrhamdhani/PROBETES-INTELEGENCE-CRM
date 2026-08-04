@@ -2,6 +2,7 @@ import { loadCustomerList, loadMembershipSummary, loadPics } from "@/app/custome
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
 import { CustomerSearchFilter } from "@/components/filters/customer-search-filter";
+import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";
 import { GroupMembershipSummary } from "@/components/customer/group-membership-summary";
 import { CustomerListTable, type CustomerListFilterInput } from "@/components/customer/customer-list-table";
@@ -116,21 +117,6 @@ export default async function GroupMembershipPage({
       <div className="space-y-4">
         <GroupMembershipSummary summary={summary} />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CustomerSearchFilter csOptions={[]} picOptions={picOptions} showCsFilter={false} showConflictOption />
-          {activeFilters.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {activeFilters.map((f) => (
-                <a key={f.label} href={f.clearHref}>
-                  <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
-                    {f.label} ✕
-                  </Badge>
-                </a>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <div>
@@ -139,6 +125,23 @@ export default async function GroupMembershipPage({
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <CustomerSearchFilter csOptions={[]} picOptions={picOptions} showCsFilter={false} showConflictOption />
+                <DateRangeFilter />
+              </div>
+              {activeFilters.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeFilters.map((f) => (
+                    <a key={f.label} href={f.clearHref}>
+                      <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
+                        {f.label} ✕
+                      </Badge>
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <CustomerListTable variant="group" filter={filter} initialData={initialData} />
           </CardContent>
         </Card>

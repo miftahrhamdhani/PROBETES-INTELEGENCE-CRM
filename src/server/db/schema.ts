@@ -111,9 +111,31 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRole("role").notNull(),
   active: boolean("active").notNull().default(true),
+  /** Audit siapa yang membuat/mengubah akun (halaman Users). Nullable karena
+   *  akun yang dibuat lewat `npm run db:seed:admin` tidak punya aktor UI. */
+  createdBy: integer("created_by"),
+  updatedBy: integer("updated_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Audit trail perubahan akun — append-only, sama pola dengan history lain. */
+export const userHistory = pgTable(
+  "user_history",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** CREATE | UPDATE_PROFILE | UPDATE_ROLE | ACTIVATE | DEACTIVATE | RESET_PASSWORD */
+    action: text("action").notNull(),
+    /** Nilai lama/baru untuk field non-rahasia. Password TIDAK PERNAH dicatat. */
+    detail: jsonb("detail").notNull().$type<Record<string, unknown>>().default({}),
+    changedBy: integer("changed_by").references(() => users.id),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("user_history_user_idx").on(t.userId, t.changedAt)]
+);
 
 export const importBatches = pgTable(
   "import_batches",
@@ -335,8 +357,15 @@ export const ksbTransactions = pgTable(
 
 /**
  * Status membership grup SAAT INI — satu baris per customer (bukan multi-grup).
- * Tidak ada baris = UNKNOWN (customer tidak pernah muncul di source manapun);
- * lihat docs/02-CLUSTER-RULES.md untuk pemakaian di cluster engine (has_group).
+ *
+ * TIDAK ADA BARIS = efektif NOT_GROUPED saat evaluasi cluster, BUKAN UNKNOWN.
+ * Dasarnya keputusan Q1 (docs/07-OPEN-QUESTIONS.md): `has_group = phone ∈
+ * (masukWA ∪ BackupMasukGrup)` — di luar daftar itu berarti belum masuk grup.
+ * Karena itu rebuildClusters memakai COALESCE(gm.status, 'NOT_GROUPED').
+ *
+ * Nilai UNKNOWN yang tersimpan EKSPLISIT hanya untuk konflik sumber (nomor
+ * muncul di daftar positif dan negatif sekaligus, issue GROUP_STATUS_CONFLICT);
+ * itulah satu-satunya yang memicu NEEDS_REVIEW lewat features.ts.
  */
 export const customerGroupMemberships = pgTable(
   "customer_group_memberships",

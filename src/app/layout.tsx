@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
 import { AuthSessionProvider } from "@/components/auth/session-provider";
 import { auth } from "@/server/auth";
 import "./globals.css";
@@ -26,6 +27,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
       <head><script dangerouslySetInnerHTML={{ __html: themeScript }} /></head>
       <body>
         <AuthSessionProvider session={session}>{children}</AuthSessionProvider>
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

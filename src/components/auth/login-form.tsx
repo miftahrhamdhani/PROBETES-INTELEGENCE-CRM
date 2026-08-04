@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState } from "react";
-import { CircleGauge, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loginAction } from "@/app/(auth)/login/actions";
 
@@ -14,9 +15,7 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm">
       <div className="mb-6 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <CircleGauge className="h-5 w-5" aria-hidden="true" />
-        </div>
+        <Image src="/probetes-logo.png" alt="" width={36} height={36} priority className="h-9 w-9 rounded-lg object-cover" />
         <div>
           <p className="text-sm font-bold tracking-tight">PROBETES</p>
           <p className="text-[11px] text-muted-foreground">Customer Intelligence</p>

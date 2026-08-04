@@ -138,9 +138,32 @@ function classifyByKeyword(name: string): CanonicalProductCode | null {
   return null;
 }
 
-export function classifyProduct(rawProductName: unknown): ProductFlags {
+/**
+ * Alias yang sudah DI-APPROVE ADMIN lewat halaman Product Mapping, dibaca dari
+ * tabel `product_aliases` lalu dioper ke sini sebagai parameter.
+ *
+ * Sengaja parameter, bukan query di dalam fungsi: classifyProduct wajib tetap
+ * fungsi murni (CLAUDE.md) supaya bisa diuji tanpa DB. Key = hasil
+ * canonicalizeForMatching(raw_name).
+ */
+export type ProductAliasOverlay = ReadonlyMap<string, CanonicalProductCode>;
+
+/**
+ * Urutan resolusi: alias approved admin -> alias eksplisit seed -> keyword -> UNKNOWN.
+ *
+ * Alias approved didahulukan supaya keputusan admin selalu menang atas tebakan
+ * keyword. Tidak ada mapping otomatis diam-diam untuk nama baru (CLAUDE.md #10):
+ * nama yang tidak ada di ketiganya tetap UNKNOWN dan menunggu approval.
+ */
+export function classifyProduct(
+  rawProductName: unknown,
+  approvedAliases?: ProductAliasOverlay
+): ProductFlags {
   const name = canonicalizeForMatching(rawProductName);
   if (name === "") return productFlagsForCode("UNKNOWN");
+
+  const approved = approvedAliases?.get(name);
+  if (approved) return productFlagsForCode(approved);
 
   const explicit = EXPLICIT_PRODUCT_ALIASES[name];
   if (explicit) return productFlagsForCode(explicit);

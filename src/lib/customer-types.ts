@@ -46,8 +46,15 @@ export type CustomerListFilter = {
    *  dari list. Tidak pernah memengaruhi RFM/Cohort/Frequency/Cluster (tetap dihitung
    *  dari seluruh customer, lihat src/server/analytics/queries.ts). */
   includeArchived?: boolean;
+  /** Customer yang first_seen_batch_id-nya = batch Database All aktif saat ini.
+   *  Relatif terhadap batch aktif, bukan window hari — hilang otomatis begitu
+   *  ada import berikutnya. Lihat buildConditions di analytics/customers.ts. */
+  isNew?: boolean;
   page?: number;
   perPage?: number;
+  /** Keyset cursor batch berikutnya (lihat encodeCursor di
+   *  src/server/analytics/customers.ts). Kalau ada, COUNT tidak diulang. */
+  cursor?: string;
 };
 
 export type CustomerListRow = {
@@ -66,13 +73,21 @@ export type CustomerListRow = {
   csNames: string;
   /** Human-readable alasan NEEDS_REVIEW, null kalau cluster bukan NEEDS_REVIEW. */
   reviewReason: string | null;
+  /** true kalau customer ini pertama kali muncul di batch Database All yang
+   *  sedang aktif — dasar badge "Baru" di tabel Customers/Customer Cluster. */
+  isNew: boolean;
 };
 
 export type CustomerListResult = {
   rows: CustomerListRow[];
+  /** Dihitung HANYA pada batch pertama (tanpa cursor). Batch cursor berikutnya
+   *  mengembalikan 0 — client mempertahankan nilai dari batch pertama supaya
+   *  COUNT join penuh tidak diulang tiap scroll. */
   total: number;
   page: number;
   perPage: number;
+  /** Penanda posisi batch berikutnya (keyset). null = sudah habis. */
+  nextCursor: string | null;
 };
 
 export type CustomerOrderItem = {
@@ -163,13 +178,17 @@ export type ClusterCustomerRow = {
   membershipStatus: MembershipStatusValue;
   productsPurchased: string;
   csNames: string;
+  /** Sama arti dengan CustomerListRow.isNew. */
+  isNew: boolean;
 };
 
 export type ClusterCustomerListResult = {
   rows: ClusterCustomerRow[];
+  /** Sama seperti CustomerListResult.total — hanya diisi pada batch pertama. */
   total: number;
   page: number;
   perPage: number;
+  nextCursor: string | null;
 };
 
 export type ClusterDistributionItem = {

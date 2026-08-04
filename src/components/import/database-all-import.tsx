@@ -94,7 +94,7 @@ export function DatabaseAllImport() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle>Upload Database All</CardTitle><CardDescription>File diproses di browser, lalu dikirim bertahap ke Neon. .xlsx: sheet wajib "allbaru". .csv: baris 1 header, data mulai baris 2.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Upload Database All</CardTitle><CardDescription>File diproses di browser, lalu dikirim bertahap ke Neon. .xlsx: sheet wajib &quot;allbaru&quot;. .csv: baris 1 header, data mulai baris 2.</CardDescription></CardHeader>
         <CardContent>
           <label className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed bg-muted/30 px-6 text-center hover:bg-muted/60">
             <FileSpreadsheet className="mb-3 h-8 w-8 text-primary" />

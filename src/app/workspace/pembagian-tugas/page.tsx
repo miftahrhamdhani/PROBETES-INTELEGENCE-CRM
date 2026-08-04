@@ -64,18 +64,19 @@ export default async function PembagianTugasPage({ searchParams }: { searchParam
 
   return (
     <AppShell title="Pembagian Tugas">
-      <div className="space-y-4">
-        <TaskSearchFilter picOptions={picOptions} />
-        <Card>
-          <CardHeader>
-            <CardTitle>{initialData.total.toLocaleString("id-ID")} task</CardTitle>
-            <CardDescription>Klik baris untuk detail · centang untuk bulk assign/status · scroll untuk memuat lebih banyak</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <TaskManager filter={filter} initialData={initialData} picOptions={picOptions} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{initialData.total.toLocaleString("id-ID")} task</CardTitle>
+          <CardDescription>
+            Klik baris untuk detail · klik kanan/centang untuk bulk assign/hapus · scroll untuk memuat lebih banyak ·
+            task Dibatalkan disembunyikan (lihat filter Status)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <TaskSearchFilter picOptions={picOptions} />
+          <TaskManager filter={filter} initialData={initialData} picOptions={picOptions} />
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }

@@ -115,7 +115,12 @@ function buildConditions(filter: WorkspaceTaskListFilter): SQL[] {
     conditions.push(sql`t.assigned_to = ${filter.pic}`);
   }
 
+  // Task Dibatalkan ("Hapus dari Pembagian Tugas") disembunyikan dari tampilan
+  // DEFAULT — mirip customer diarsipkan yang hilang dari daftar Customers tanpa
+  // pernah dihapus dari DB. Begitu user memilih Status = Dibatalkan secara
+  // eksplisit di filter, tetap terlihat penuh (dan bisa dipulihkan dari sana).
   if (filter.status) conditions.push(sql`t.status = ${filter.status}`);
+  else conditions.push(sql`t.status <> 'CANCELLED'`);
   if (filter.taskType) conditions.push(sql`t.task_type = ${filter.taskType}`);
   if (filter.outcome) conditions.push(sql`t.outcome = ${filter.outcome}`);
   if (filter.dateFrom) conditions.push(sql`t.due_at >= ${filter.dateFrom}::date`);
@@ -462,6 +467,34 @@ export async function createManualTask(
   if (!id) throw new Error("Gagal membuat task");
   void actorUserId;
   return { id };
+}
+
+/**
+ * Versi bulk createManualTask — dipakai "Masukkan ke Pembagian Tugas" dari
+ * Customers/Customer Cluster (klik kanan satu baris ATAU multi-select).
+ * Satu INSERT set-based (unnest), sama pola dengan bulkAssignTasks di atas.
+ * Semua task lahir UNASSIGNED — leader yang assign ke staff dari halaman
+ * Pembagian Tugas, tidak ada langkah tersembunyi lain.
+ *
+ * Tidak ada dedup terhadap task lama: customer boleh punya banyak BROADCAST
+ * task sepanjang waktu (beda dengan FOLLOW_UP_NEW_CUSTOMER yang unique per
+ * customer) — lihat komentar crm_tasks_new_customer_uq di schema.ts.
+ */
+export async function createManualTasksBulk(
+  input: { customerIds: number[]; taskType: string; dueAt?: string | null; notes?: string | null },
+  actorUserId: number
+): Promise<{ created: number }> {
+  return withTransaction(async (client) => {
+    const result = await client.query<{ id: number }>(
+      `INSERT INTO crm_tasks (customer_id, task_type, status, due_at, notes, created_at, updated_at)
+       SELECT c.id, $2::crm_task_type, 'UNASSIGNED', $3::date, $4, now(), now()
+       FROM unnest($1::int[]) AS c(id)
+       RETURNING id`,
+      [input.customerIds, input.taskType, input.dueAt ?? null, input.notes ?? null]
+    );
+    void actorUserId;
+    return { created: result.rows.length };
+  });
 }
 
 /**

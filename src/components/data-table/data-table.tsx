@@ -1,11 +1,19 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+
+export function rectanglesIntersect(
+  a: { left: number; right: number; top: number; bottom: number },
+  b: { left: number; right: number; top: number; bottom: number }
+) {
+  return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
+}
 
 export interface DataTableProps<T> {
   /** Kolom data — nomor baris ditambahkan otomatis oleh DataTable, jangan sertakan di sini. */
@@ -21,6 +29,16 @@ export interface DataTableProps<T> {
   height?: number;
   rowHeight?: number;
   onRowClick?: (row: T) => void;
+  /** Klik kanan pada baris — dipakai menu Copy/Edit/Masukkan ke Pembagian Tugas
+   *  (Customers, Customer Cluster). preventDefault dipanggil di sini supaya
+   *  pemanggil tidak perlu mengulang boilerplate itu di tiap tabel. */
+  onRowContextMenu?: (row: T, event: React.MouseEvent<HTMLTableRowElement>) => void;
+  /** Aktifkan drag-selection pada tabel tertentu. Hanya baris yang sedang dirender
+   *  virtualizer yang dapat tersentuh; pemanggil tetap memiliki state kandidat. */
+  marqueeSelection?: {
+    candidateIds: ReadonlySet<string>;
+    onCandidateIdsChange: (ids: Set<string>) => void;
+  };
 }
 
 /**
@@ -41,6 +59,8 @@ export function DataTable<T>({
   height = 560,
   rowHeight = 38,
   onRowClick,
+  onRowContextMenu,
+  marqueeSelection,
 }: DataTableProps<T>) {
   const numberedColumns = React.useMemo<ColumnDef<T, any>[]>(
     () => [
@@ -68,7 +88,88 @@ export function DataTable<T>({
   });
 
   const parentRef = React.useRef<HTMLDivElement>(null);
+  const dragRef = React.useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(null);
+  const suppressClickRef = React.useRef(false);
+  const [marqueeBox, setMarqueeBox] = React.useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const tableRows = table.getRowModel().rows;
+
+  React.useEffect(() => {
+    if (!marqueeSelection) return;
+
+    const onCandidateIdsChange = marqueeSelection.onCandidateIdsChange;
+
+    function cancelCandidates(event: KeyboardEvent | PointerEvent) {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof PointerEvent) {
+        const target = event.target;
+        if (parentRef.current?.contains(target as Node)) return;
+        if (target instanceof Element && target.closest('[role="menu"], [role="menuitem"]')) return;
+      }
+      dragRef.current = null;
+      setMarqueeBox(null);
+      onCandidateIdsChange(new Set());
+    }
+
+    document.addEventListener("keydown", cancelCandidates, true);
+    document.addEventListener("pointerdown", cancelCandidates, true);
+    return () => {
+      document.removeEventListener("keydown", cancelCandidates, true);
+      document.removeEventListener("pointerdown", cancelCandidates, true);
+    };
+  }, [marqueeSelection]);
+
+  function handleMarqueePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!marqueeSelection || event.button !== 0 || event.pointerType !== "mouse") return;
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest("tbody tr[data-row-id]")) return;
+    if (target.closest('a, button, input, select, textarea, label, [role="button"], [role="menuitem"], [contenteditable="true"]')) return;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, dragging: false };
+    marqueeSelection.onCandidateIdsChange(new Set());
+    setMarqueeBox(null);
+  }
+
+  function handleMarqueePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!marqueeSelection || !drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.dragging && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
+
+    drag.dragging = true;
+    suppressClickRef.current = true;
+    event.preventDefault();
+    document.getSelection()?.removeAllRanges();
+
+    const left = Math.min(drag.startX, event.clientX);
+    const top = Math.min(drag.startY, event.clientY);
+    const right = Math.max(drag.startX, event.clientX);
+    const bottom = Math.max(drag.startY, event.clientY);
+    setMarqueeBox({ left, top, width: right - left, height: bottom - top });
+
+    const ids = new Set<string>();
+    parentRef.current?.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row-id]").forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      if (rectanglesIntersect(rect, { left, right, top, bottom })) {
+        const id = element.dataset.rowId;
+        if (id) ids.add(id);
+      }
+    });
+    marqueeSelection.onCandidateIdsChange(ids);
+  }
+
+  function finishMarquee(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (drag.dragging) {
+      event.preventDefault();
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+    }
+    dragRef.current = null;
+    setMarqueeBox(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   const virtualizer = useVirtualizer({
     count: tableRows.length,
@@ -98,7 +199,15 @@ export function DataTable<T>({
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <div ref={parentRef} className="scrollbar-thin overflow-auto" style={{ height }}>
+      <div
+        ref={parentRef}
+        className={cn("scrollbar-thin overflow-auto", marqueeSelection && "cursor-marquee")}
+        style={{ height }}
+        onPointerDown={handleMarqueePointerDown}
+        onPointerMove={handleMarqueePointerMove}
+        onPointerUp={finishMarquee}
+        onPointerCancel={finishMarquee}
+      >
         <table className="border-collapse text-xs" style={{ width: table.getTotalSize(), tableLayout: "fixed" }}>
           <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur supports-[backdrop-filter]:bg-muted/80">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -137,12 +246,29 @@ export function DataTable<T>({
               return (
                 <tr
                   key={row.id}
+                  data-row-id={row.id}
                   className={cn(
                     "border-b transition-colors hover:bg-muted/40",
-                    onRowClick && "cursor-pointer"
+                    onRowClick && !marqueeSelection && "cursor-pointer",
+                    marqueeSelection?.candidateIds.has(row.id) && "bg-primary/15 ring-1 ring-inset ring-primary/40"
                   )}
                   style={{ height: rowHeight }}
-                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                  onClick={
+                    onRowClick
+                      ? () => {
+                          if (suppressClickRef.current) return;
+                          onRowClick(row.original);
+                        }
+                      : undefined
+                  }
+                  onContextMenu={
+                    onRowContextMenu
+                      ? (event) => {
+                          event.preventDefault();
+                          onRowContextMenu(row.original, event);
+                        }
+                      : undefined
+                  }
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 align-middle" style={{ width: cell.column.getSize() }}>
@@ -170,6 +296,16 @@ export function DataTable<T>({
           </div>
         ) : null}
       </div>
+      {marqueeBox
+        ? createPortal(
+            <div
+              aria-hidden="true"
+              className="pointer-events-none fixed z-[100] border border-primary bg-primary/15"
+              style={marqueeBox}
+            />,
+            document.body
+          )
+        : null}
     </div>
   );
 }

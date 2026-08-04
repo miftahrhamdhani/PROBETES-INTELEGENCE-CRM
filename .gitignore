@@ -32,3 +32,5 @@ next-env.d.ts
 
 # graphify knowledge-graph cache
 /graphify-out
+/test-results
+

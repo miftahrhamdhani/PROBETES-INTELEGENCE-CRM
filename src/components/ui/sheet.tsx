@@ -21,17 +21,29 @@ function SheetOverlay({ className, ...props }: React.ComponentPropsWithoutRef<ty
   );
 }
 
+/** Sisi munculnya panel. Default "right" — dipakai detail customer/task yang
+ *  sudah ada; "left" dipakai drawer navigasi mobile. */
+type SheetSide = "left" | "right";
+
+const SIDE_CLASSES: Record<SheetSide, string> = {
+  right:
+    "inset-y-0 right-0 border-l sm:max-w-xl data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
+  left:
+    "inset-y-0 left-0 border-r sm:max-w-sm data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
+};
+
 export const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { side?: SheetSide }
+>(({ className, children, side = "right", ...props }, ref) => (
   <DialogPrimitive.Portal>
     <SheetOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-y-0 right-0 z-50 flex h-full w-full flex-col gap-0 border-l bg-card shadow-lg outline-none sm:max-w-xl",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right data-[state=closed]:duration-300 data-[state=open]:duration-300",
+        "fixed z-50 flex h-full w-full flex-col gap-0 bg-card shadow-lg outline-none",
+        "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-300",
+        SIDE_CLASSES[side],
         className
       )}
       {...props}

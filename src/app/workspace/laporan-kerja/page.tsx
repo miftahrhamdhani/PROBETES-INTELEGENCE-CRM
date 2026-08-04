@@ -84,14 +84,13 @@ export default async function WorkspaceLaporanKerjaPage({ searchParams }: { sear
     <AppShell title="Laporan Kerja">
       <div className="space-y-4">
         <WorkspaceReportKpiTiles kpi={overview.kpi} reportTotalValue={reportTotalValue} />
-        <WorkspaceReportFilter picOptions={picOptions} platformOptions={platformOptions} />
-
         <Card>
           <CardHeader>
             <CardTitle>{initialData.total.toLocaleString("id-ID")} laporan</CardTitle>
             <CardDescription>Klik baris untuk edit · scroll untuk memuat lebih banyak · kolom bisa di-resize</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            <WorkspaceReportFilter picOptions={picOptions} platformOptions={platformOptions} />
             <CrmReportManager filter={filter} initialData={initialData} exportQuery={exportQuery.toString()} showTaskColumns />
           </CardContent>
         </Card>

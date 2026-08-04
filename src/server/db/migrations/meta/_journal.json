@@ -78,6 +78,13 @@
       "when": 1785550313776,
       "tag": "0010_bent_bushwacker",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785763827439,
+      "tag": "0011_steep_hannibal_king",
+      "breakpoints": true
     }
   ]
 }

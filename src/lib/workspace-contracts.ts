@@ -75,8 +75,11 @@ export function canTransitionStatus(from: CrmTaskStatus, to: CrmTaskStatus): boo
 }
 
 /** Status yang boleh dipakai di "Bulk Status" — DONE sengaja dikecualikan karena
- *  wajib melalui completeTask (butuh outcome), tidak lewat aksi massal generik. */
-export const BULK_STATUS_TARGETS = ["ASSIGNED", "IN_PROGRESS", "CANCELLED"] as const;
+ *  wajib melalui completeTask (butuh outcome), tidak lewat aksi massal generik.
+ *  UNASSIGNED disertakan supaya task yang salah dibatalkan bisa dipulihkan
+ *  beramai-ramai (canTransitionStatus sudah mengizinkan CANCELLED -> UNASSIGNED),
+ *  bukan cuma satu-satu lewat "Aktifkan Kembali" di detail sheet. */
+export const BULK_STATUS_TARGETS = ["UNASSIGNED", "ASSIGNED", "IN_PROGRESS", "CANCELLED"] as const;
 
 export const assignTaskSchema = z.object({
   assignedTo: z.number().int().positive(),
@@ -118,6 +121,19 @@ export const completeTaskSchema = z.object({
 });
 export type CompleteTaskBody = z.infer<typeof completeTaskSchema>;
 
+/** Konfirmasi JOINED_GROUP -> membership GROUPED. Bentuk field sengaja sama
+ *  dengan updateMembershipSchema (src/lib/membership-contracts.ts) karena
+ *  keduanya bermuara ke service membership yang sama. */
+export const confirmJoinedGroupSchema = z.object({
+  groupName: z.string().trim().max(255).nullable().optional(),
+  joinedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal YYYY-MM-DD")
+    .nullable()
+    .optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+
 export const setDueDateSchema = z.object({
   dueAt: z
     .string()
@@ -137,6 +153,21 @@ export const createTaskSchema = z.object({
   notes: z.string().trim().max(2000).nullable().optional(),
 });
 export type CreateTaskBody = z.infer<typeof createTaskSchema>;
+
+/** "Masukkan ke Pembagian Tugas" dari Customers/Customer Cluster (klik kanan
+ *  atau multi-select) — satu atau banyak customer sekaligus, task sama untuk
+ *  semuanya. Dipakai createManualTasksBulkAction. */
+export const createTasksBulkSchema = z.object({
+  customerIds: z.array(z.number().int().positive()).min(1).max(200),
+  taskType: z.enum(CRM_TASK_TYPES),
+  dueAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+export type CreateTasksBulkBody = z.infer<typeof createTasksBulkSchema>;
 
 export type WorkspaceTaskListFilter = {
   search?: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Archive, ArchiveRestore, MoreHorizontal } from "lucide-react";
+import { Archive, ArchiveRestore, Eye, MoreHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -63,12 +63,6 @@ export function buildCrmReportColumns(
 
   return [
     {
-      id: "reportDate",
-      header: "Tanggal",
-      size: 110,
-      cell: ({ row }) => <span className="tabular">{formatDate(row.original.reportDate)}</span>,
-    },
-    {
       id: "customerName",
       header: "Nama Konsumen",
       size: 180,
@@ -77,60 +71,116 @@ export function buildCrmReportColumns(
     {
       id: "phone",
       header: "No HP",
-      size: 150,
+      size: 145,
       cell: ({ row }) => <span className="tabular">{row.original.phone}</span>,
+    },
+    {
+      id: "address",
+      header: "Alamat",
+      size: 240,
+      cell: ({ row }) => <span title={row.original.address ?? undefined}>{row.original.address ?? "—"}</span>,
     },
     {
       id: "city",
       header: "Kota",
+      size: 120,
+      cell: ({ row }) => <span>{row.original.city ?? "—"}</span>,
+    },
+    {
+      id: "recipientDistrict",
+      header: "Kecamatan",
+      size: 140,
+      cell: ({ row }) => <span>{row.original.recipientDistrict ?? "—"}</span>,
+    },
+    {
+      id: "expedition",
+      header: "Ekspedisi",
+      size: 120,
+      cell: ({ row }) => <span>{row.original.expedition ?? "—"}</span>,
+    },
+    {
+      id: "paymentMethod",
+      header: "Pembayaran",
       size: 130,
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.city ?? "—"}</span>,
+      cell: ({ row }) => <span>{row.original.paymentMethod ?? "—"}</span>,
     },
     {
       id: "items",
       header: "Produk",
-      size: 260,
-      cell: ({ row }) => (
-        <span className="text-muted-foreground" title={row.original.itemsSummary}>
-          {row.original.itemsSummary}
-        </span>
-      ),
+      size: 280,
+      cell: ({ row }) => <span title={row.original.itemsSummary}>{row.original.itemsSummary}</span>,
+    },
+    {
+      id: "totalQty",
+      header: "Total Qty",
+      size: 95,
+      cell: ({ row }) => <span className="tabular">{row.original.totalQty}</span>,
+    },
+    {
+      id: "totalProductValue",
+      header: "Total Nilai Produk",
+      size: 155,
+      cell: ({ row }) => <span className="tabular">{formatRupiah(row.original.totalProductValue)}</span>,
+    },
+    {
+      id: "shippingCost",
+      header: "Ongkir",
+      size: 115,
+      cell: ({ row }) => <span className="tabular">{formatRupiah(row.original.shippingCost)}</span>,
+    },
+    {
+      id: "packingCost",
+      header: "Packing",
+      size: 110,
+      cell: ({ row }) => <span className="tabular">{formatRupiah(row.original.packingCost)}</span>,
+    },
+    {
+      id: "discount",
+      header: "Diskon",
+      size: 110,
+      cell: ({ row }) => <span className="tabular">{formatRupiah(row.original.discount)}</span>,
+    },
+    {
+      id: "adminCod",
+      header: "Admin COD",
+      size: 115,
+      cell: ({ row }) => <span className="tabular">{formatRupiah(row.original.adminCod)}</span>,
     },
     {
       id: "totalPayment",
       header: "Total Bayar",
       size: 140,
-      cell: ({ row }) => <span className="font-medium tabular">{formatRupiah(row.original.totalPayment)}</span>,
+      cell: ({ row }) => <span className="font-semibold tabular">{formatRupiah(row.original.totalPayment)}</span>,
     },
     {
       id: "csName",
-      header: "CS",
+      header: "Nama CS",
       size: 120,
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.csName ?? "—"}</span>,
+      cell: ({ row }) => <span>{row.original.csName ?? "—"}</span>,
     },
     {
       id: "advName",
-      header: "ADV",
+      header: "Nama ADV",
       size: 120,
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.advName ?? "—"}</span>,
+      cell: ({ row }) => <span>{row.original.advName ?? "—"}</span>,
     },
     {
       id: "platform",
       header: "Platform",
       size: 120,
-      cell: ({ row }) => (row.original.platform ? <Badge variant="outline">{row.original.platform}</Badge> : <span className="text-muted-foreground">—</span>),
-    },
-    {
-      id: "division",
-      header: "Divisi",
-      size: 110,
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.division ?? "—"}</span>,
+      cell: ({ row }) => (row.original.platform ? <Badge variant="outline">{row.original.platform}</Badge> : <span>—</span>),
     },
     {
       id: "salesType",
       header: "Type Sales",
       size: 120,
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.salesType ?? "—"}</span>,
+      cell: ({ row }) => <span>{row.original.salesType ?? "—"}</span>,
+    },
+    {
+      id: "reportDate",
+      header: "Tanggal",
+      size: 110,
+      cell: ({ row }) => <span className="tabular">{formatDate(row.original.reportDate)}</span>,
     },
     ...taskColumns,
     {
@@ -138,7 +188,10 @@ export function buildCrmReportColumns(
       header: "",
       size: 48,
       enableResizing: false,
-      cell: ({ row }) => (
+      cell: ({ row }) =>
+        row.original.id <= 0 ? (
+          <Eye className="h-3.5 w-3.5 text-primary" aria-label="Draft realtime" />
+        ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => e.stopPropagation()} aria-label="Aksi lain">
@@ -159,7 +212,7 @@ export function buildCrmReportColumns(
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      ),
+        ),
     },
   ];
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { updateMembershipSchema } from "@/lib/membership-contracts";
 import { authErrorStatus, requireRole } from "@/server/auth/guards";
+import { revalidateAnalytics } from "@/server/analytics/cache";
 import { updateMembership } from "@/server/membership/service";
 
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       updatedByUserId: Number(user.id),
     });
 
+    // has_group -> cluster berubah, agregat analytics ikut basi.
+    revalidateAnalytics();
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json({ error: message(error) }, { status: authErrorStatus(error) ?? 400 });

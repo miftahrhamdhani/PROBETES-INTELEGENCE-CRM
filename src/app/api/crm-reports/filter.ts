@@ -1,10 +1,11 @@
+import { crmReportListFilterSchema } from "@/lib/list-filter-contracts";
 import type { CrmReportListFilter } from "@/lib/crm-report-contracts";
 
 /** Parsing query string yang sama dipakai halaman /crm-reports (client) dan
- *  route export (server) — supaya hasil export = hasil filter yang sedang dilihat. */
+ *  route export (server) — supaya hasil export = hasil filter yang sedang dilihat.
+ *  Divalidasi Zod: query string datang dari luar, nilai tak dikenal dibuang. */
 export function filterFromSearchParams(params: URLSearchParams): CrmReportListFilter {
-  const pic = params.get("pic");
-  return {
+  const raw = {
     search: params.get("search") ?? undefined,
     csName: params.get("csName") ?? undefined,
     platform: params.get("platform") ?? undefined,
@@ -12,9 +13,12 @@ export function filterFromSearchParams(params: URLSearchParams): CrmReportListFi
     salesType: params.get("salesType") ?? undefined,
     dateFrom: params.get("reportFrom") ?? undefined,
     dateTo: params.get("reportTo") ?? undefined,
-    pic: pic ? Number(pic) : undefined,
+    pic: params.get("pic") ?? undefined,
     taskType: params.get("taskType") ?? undefined,
     taskStatus: params.get("taskStatus") ?? undefined,
     outcome: params.get("outcome") ?? undefined,
   };
+  return crmReportListFilterSchema.parse(
+    Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined && v !== ""))
+  );
 }

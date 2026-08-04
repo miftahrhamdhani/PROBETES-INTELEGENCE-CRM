@@ -1,7 +1,7 @@
 import { normalizeAmount } from "../normalize/amount";
 import { normalizeDate } from "../normalize/date";
 import { normalizePhone } from "../normalize/phone";
-import { classifyProduct } from "../normalize/product-catalog";
+import { classifyProduct, type ProductAliasOverlay } from "../normalize/product-catalog";
 import { cleanText, normalizeForMatching } from "../normalize/text";
 import { buildKsbTransactionKey } from "./ksb-parser";
 import { hasColumn, sourceValue as value } from "./source-row";
@@ -32,8 +32,15 @@ export function assertDatabaseAllColumns(headers: string[]): void {
 /**
  * Parser murni: raw rows → order harian. Tidak menyentuh DB.
  * Satu customer + satu tanggal = satu order; semua idpesan di hari itu jadi items.
+ *
+ * `approvedAliases` (opsional) = mapping produk yang sudah di-approve admin di
+ * halaman Product Mapping, dioper dari orchestrator. Dioper sebagai parameter
+ * supaya parser tetap fungsi murni dan bisa diuji tanpa DB.
  */
-export function parseDatabaseAll(rows: SourceRow[]): DatabaseAllParseResult {
+export function parseDatabaseAll(
+  rows: SourceRow[],
+  approvedAliases?: ProductAliasOverlay
+): DatabaseAllParseResult {
   const grouped = new Map<string, NormalizedDailyOrder>();
   const ksbTransactions = new Map<string, NormalizedKsbTransaction>();
   const excluded: ExcludedRow[] = [];
@@ -59,7 +66,7 @@ export function parseDatabaseAll(rows: SourceRow[]): DatabaseAllParseResult {
     }
 
     const rawProductName = cleanText(value(row, "Produk 1"));
-    const productFlags = classifyProduct(rawProductName);
+    const productFlags = classifyProduct(rawProductName, approvedAliases);
     if (productFlags.code === "UNKNOWN") codes.push("UNKNOWN_PRODUCT");
 
     const externalId = cleanText(value(row, "idpesan")) || null;
@@ -137,8 +144,6 @@ export function parseDatabaseAll(rows: SourceRow[]): DatabaseAllParseResult {
       });
     }
 
-    if (asOfDate === null || dateResult.date > asOfDate) asOfDate = dateResult.date;
-
     // UNKNOWN/MISSING_ORDER_ID bukan excluded — import tetap lanjut. Issue dicatat
     // oleh orchestrator ke data_quality_issues berdasarkan data item ini.
   }
@@ -150,6 +155,17 @@ export function parseDatabaseAll(rows: SourceRow[]): DatabaseAllParseResult {
     .map((o) => ({ ...o, items: o.items.filter((i) => !i.productFlags.isKsbProduct) }))
     .filter((o) => o.items.length > 0)
     .sort((a, b) => a.sourceOrderKey.localeCompare(b.sourceOrderKey));
+
+  // as_of_date = MAX(order_date) dari ORDER PROBETES FINAL — bukan dari seluruh
+  // baris valid. Baris KSB-only (mis. Yacona tanggal 5 Agu saat order Probetes
+  // terakhir 1 Agu) TIDAK BOLEH memajukan as_of: seluruh query analytics
+  // menghitung as_of dari MAX(orders.order_date) yang isinya Probetes saja, jadi
+  // kalau di sini ikut maju, recency_days/customer_age_days (dan lewat itu
+  // D-New/D-Old, Dhp-New/Dhp-Old) akan bergeser dan UI beda dengan Cohort.
+  // Lihat docs/02-CLUSTER-RULES.md §3.3 dan docs/04-DESIGN.md §5.1.
+  for (const order of orders) {
+    if (asOfDate === null || order.orderDate > asOfDate) asOfDate = order.orderDate;
+  }
 
   return {
     orders,

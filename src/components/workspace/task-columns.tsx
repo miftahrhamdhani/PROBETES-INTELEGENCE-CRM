@@ -3,6 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SelectAllCheckbox } from "@/components/data-table/select-all-checkbox";
 import { formatDate } from "@/lib/format";
 import { CLUSTER_LABELS, NON_CLUSTER_LABELS, type ClusterAssignmentCode } from "@/lib/cluster-codes";
 import { MEMBERSHIP_STATUS_LABELS } from "@/lib/membership-contracts";
@@ -42,12 +43,22 @@ const OUTCOME_VARIANT: Record<CrmTaskOutcome, "default" | "secondary" | "outline
 export function buildWorkspaceTaskColumns(opts: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggleAll: () => void;
 }): ColumnDef<WorkspaceTaskRow, any>[] {
   const { selectedIds, onToggle } = opts;
   return [
     {
       id: "select",
-      header: "",
+      header: () => (
+        <SelectAllCheckbox
+          allSelected={opts.allSelected}
+          someSelected={opts.someSelected}
+          onToggle={opts.onToggleAll}
+          ariaLabel="Pilih semua task yang dimuat"
+        />
+      ),
       size: 36,
       minSize: 36,
       maxSize: 36,

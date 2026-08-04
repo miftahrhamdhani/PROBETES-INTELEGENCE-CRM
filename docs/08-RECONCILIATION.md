@@ -259,7 +259,11 @@ dengan key yang sama seperti Legacy, sehingga overlap otomatis dedup lewat
 | Tahap | Jumlah |
 |---|---:|
 | Item `product_family=KSB` di Database All (raw) | 8.674 |
-| Distinct content-key | 8.458 |
+| Distinct content-key (parser saat ini) | **8.456** |
+
+> **Koreksi 1 Agu 2026.** Angka 8.458 pada versi sebelumnya berasal dari era
+> parser lama. Parser saat ini menghasilkan **8.456** content-key dari staging
+> Database All. Lihat §6.8 untuk penyelesaian drift-nya.
 
 ### 6.3 Reconciliation Legacy vs Database All
 
@@ -338,3 +342,81 @@ bergantung `has_group`).
   audit trail `SKIPPED_NON_KSB_FROM_LEGACY`, migration summary di console.
 - Migration: `0002_calm_giant_man.sql` — `ALTER TYPE issue_type ADD VALUE
   'SKIPPED_NON_KSB_FROM_LEGACY'` + rename kolom di atas.
+
+---
+
+## 7. Populasi CRM final — angka live per 1 Agu 2026
+
+Diverifikasi ulang langsung dari Neon (bukan dari catatan lama). Perhatikan
+**satuan** tiap baris — halaman `/reconciliation` menampilkan angka yang sama
+lengkap dengan label universe dan persamaan balance-nya.
+
+| Metrik | Satuan | Jumlah |
+|---|---|---:|
+| Customer kanonik | customer | 37.833 |
+| ├─ Customer Probetes (punya order) | customer | 15.396 |
+| └─ Customer KSB-only | customer | 22.437 |
+| Populasi RFM Probetes (`frequency > 0`) | customer | 15.396 |
+| Cluster resmi A1–F | customer | 16.156 |
+| NEEDS_REVIEW | customer | 123 |
+| YACONA_NON_COHORT | customer | 21.554 |
+| Order kanonik | order | 20.618 |
+| Item order | item | 24.024 |
+| Transaksi KSB kanonik | transaksi | **42.880** |
+
+Persamaan yang harus balance (dicek otomatis di halaman Reconciliation):
+
+```
+customer Probetes + customer KSB-only          = customer kanonik
+cluster resmi + needs review + yacona non-cohort = baris cluster = baris RFM
+baris membership + customer tanpa baris        = customer kanonik
+order = source_order_key unik, item = source_item_key unik, KSB = key unik
+```
+
+---
+
+## 8. Penyelesaian drift KSB (1 Agu 2026)
+
+Audit end-to-end menemukan sisa drift dari bug §6.5 yang **belum** tuntas:
+
+| Kategori | Jumlah | Tindakan |
+|---|---:|---|
+| MISSING — key dihasilkan parser terbaru tapi belum ada di canonical | **7** | ✅ di-INSERT lewat `npm run backfill:ksb -- --apply` |
+| STALE — key di canonical yang tidak lagi dihasilkan parser | **2** | ⚠️ **sengaja DIPERTAHANKAN** |
+
+### Kenapa 7 baris MISSING tidak mengubah Cluster B
+
+Ketujuhnya `amount = 0` (Yacona), dan **ketujuh tanggalnya sudah ada** di
+`ksb_transactions` untuk nomor yang sama. Karena
+`yacona_frequency = COUNT(DISTINCT transaction_date)`, tidak satu pun menambah
+hari unik → **Cluster B tetap 1.018**, nol customer berpindah cluster.
+
+### Kenapa 2 baris STALE TIDAK dihapus
+
+Pemeriksaan dampak sebelum eksekusi menunjukkan keduanya adalah **satu-satunya
+baris pada pasangan (phone, tanggal)**-nya, dengan amount wajar (Rp440.000 dan
+Rp448.000 — bukan artefak amount=0):
+
+```
+6282176243939  2025-02-09   hari unik 4 -> 3  bila dihapus
+6287765514758  2025-02-03   hari unik 1 -> 0  bila dihapus   ← kehilangan seluruh histori KSB
+```
+
+Key-nya menyimpang, tetapi **transaksinya sah**. Menghapusnya berarti membuang
+hari transaksi nyata; customer kedua bahkan akan hilang dari
+`customer_rfm_current` dan kehilangan cluster. Keputusan: pertahankan sebagai
+histori. Script menolak menghapus baris stale secara default.
+
+### Rekonsiliasi setelah backfill
+
+```
+key dari parser terbaru                 : 8.456
+baris stale dipertahankan (histori sah) :     2
+diharapkan asal Database All            : 8.458
+canonical asal Database All (nyata)     : 8.458   ✓ balance
+total canonical = key unik              : 42.880 / 42.880  ✓
+Cluster B                               : 1.018 -> 1.018 (+0)
+```
+
+Script `scripts/backfill-ksb-drift.ts` idempoten — dijalankan ulang dengan
+`--apply` menghasilkan 0 insert dan angka yang sama.

@@ -55,14 +55,29 @@ idpesan = 1379
   2025-06-03 | 6281218258335 | Ebook 30    | Rp  89.000    ← customer & tanggal beda
 ```
 
-### Keputusan
+### Keputusan — ⚠️ SUDAH DIGANTIKAN
+
+> **Keputusan awal di bawah TIDAK LAGI BERLAKU.** Kode sumber sistem lama yang
+> ditemukan kemudian mengonfirmasi Frequency dihitung dari **hari unik**, bukan
+> `idpesan`. Order key final yang dipakai kode saat ini:
+>
+> ```
+> canonical_order_key = (order_date, normalized_phone)      -- SATU HARI = SATU ORDER
+> ```
+>
+> Lihat [02-CLUSTER-RULES.md §3.2](02-CLUSTER-RULES.md) (definisi resmi) dan
+> [08-RECONCILIATION.md §3.1](08-RECONCILIATION.md) (bukti numerik: |Δ| 2.257 → 2.023).
+> `idpesan` tetap disimpan penuh di `order_items` untuk ketertelusuran per-item,
+> tapi **tidak dipakai** untuk Frequency/Cluster.
+
+Keputusan awal (arsip):
 ```
 canonical_order_key = (order_date, normalized_phone, idpesan)
 ```
 Terbukti menghasilkan **30.483 order** dari baris valid, **nol duplikat 100%**.
 
-Baris tanpa `idpesan` → `SYN-{hash}` dengan `identity_confidence = LOW`
-(di file ini: 0 baris, semua punya idpesan).
+Baris tanpa `idpesan` → `identity_confidence = LOW` dan `sourceItemKey` memakai
+penanda `NO_ID` (di file ini: 0 baris, semua punya idpesan).
 
 ---
 

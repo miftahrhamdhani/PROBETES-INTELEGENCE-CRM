@@ -1,10 +1,91 @@
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
+import { MoreVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SelectAllCheckbox } from "@/components/data-table/select-all-checkbox";
 import { CLUSTER_LABELS, NON_CLUSTER_LABELS, type ClusterAssignmentCode } from "@/lib/cluster-codes";
 import { formatDate, formatRupiah } from "@/lib/format";
 import type { ClusterCustomerRow, CustomerListRow } from "@/lib/customer-types";
 import { MEMBERSHIP_STATUS_LABELS, type MembershipStatusValue } from "@/lib/membership-contracts";
+
+/** Dipakai buildCustomerColumns/buildClusterCustomerColumns — checkbox select
+ *  + tombol ⋮ (klik kanan/⋮ membuka menu Copy/Edit/Masukkan ke Pembagian Tugas,
+ *  lihat RowContextMenu). Sengaja parameter generik supaya satu bentuk opts
+ *  dipakai kedua tabel (Customers & Customer Cluster). */
+type RowActionOpts<T extends { customerId: number }> = {
+  detailHref: (id: number) => string;
+  selectedIds: Set<number>;
+  onToggle: (id: number) => void;
+  /** Centang/hapus centang SEMUA baris yang sedang dimuat (lihat SelectAllCheckbox). */
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggleAll: () => void;
+  onOpenMenu: (row: T, x: number, y: number) => void;
+};
+
+function selectColumn<T extends { customerId: number }>(opts: RowActionOpts<T>): ColumnDef<T, any> {
+  return {
+    id: "select",
+    header: () => (
+      <SelectAllCheckbox
+        allSelected={opts.allSelected}
+        someSelected={opts.someSelected}
+        onToggle={opts.onToggleAll}
+        ariaLabel="Pilih semua customer yang dimuat"
+      />
+    ),
+    size: 36,
+    minSize: 36,
+    maxSize: 36,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5 cursor-pointer accent-primary"
+        checked={opts.selectedIds.has(row.original.customerId)}
+        onClick={(e) => e.stopPropagation()}
+        onChange={() => opts.onToggle(row.original.customerId)}
+        aria-label={`Pilih customer ${row.original.customerId}`}
+      />
+    ),
+  };
+}
+
+function actionsColumn<T extends { customerId: number }>(opts: RowActionOpts<T>): ColumnDef<T, any> {
+  return {
+    id: "actions",
+    header: "",
+    size: 40,
+    minSize: 40,
+    maxSize: 40,
+    enableResizing: false,
+    cell: ({ row }) => (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        aria-label="Menu aksi customer"
+        onClick={(e) => {
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          opts.onOpenMenu(row.original, rect.left, rect.bottom + 4);
+        }}
+      >
+        <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
+      </Button>
+    ),
+  };
+}
+
+/** Badge "Baru" — customer pertama kali muncul di batch Database All aktif
+ *  saat ini (lihat isNew di analytics/customers.ts). Hilang otomatis begitu
+ *  ada import berikutnya. */
+function NewBadge({ show }: { show: boolean }) {
+  if (!show) return null;
+  return <Badge variant="success" className="shrink-0">Baru</Badge>;
+}
 
 export function clusterLabel(code: ClusterAssignmentCode | null): string {
   if (!code) return "—";
@@ -18,8 +99,10 @@ export const MEMBERSHIP_VARIANT: Record<MembershipStatusValue, "success" | "outl
 };
 
 /** Kolom fokus RFM — dipakai /customers dan preview di /cluster. */
-export function buildCustomerColumns(detailHref: (id: number) => string): ColumnDef<CustomerListRow, any>[] {
+export function buildCustomerColumns(opts: RowActionOpts<CustomerListRow>): ColumnDef<CustomerListRow, any>[] {
+  const { detailHref } = opts;
   return [
+    selectColumn(opts),
     {
       id: "phone",
       header: "No HP",
@@ -34,9 +117,14 @@ export function buildCustomerColumns(detailHref: (id: number) => string): Column
     {
       id: "name",
       header: "Nama",
-      size: 180,
+      size: 200,
       accessorKey: "displayName",
-      cell: ({ row }) => row.original.displayName,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5">
+          <NewBadge show={row.original.isNew} />
+          <span className="truncate">{row.original.displayName}</span>
+        </div>
+      ),
     },
     {
       id: "recency",
@@ -98,6 +186,7 @@ export function buildCustomerColumns(detailHref: (id: number) => string): Column
         </span>
       ),
     },
+    actionsColumn(opts),
   ];
 }
 
@@ -106,8 +195,10 @@ export function buildCustomerColumns(detailHref: (id: number) => string): Column
  * Belanja, Total Fisik, Frequency, Hari Sejak Beli, Pertama Beli, Status Grup,
  * Produk yang Dibeli, CS. Nomor baris ditambahkan otomatis oleh DataTable.
  */
-export function buildClusterCustomerColumns(detailHref: (id: number) => string): ColumnDef<ClusterCustomerRow, any>[] {
+export function buildClusterCustomerColumns(opts: RowActionOpts<ClusterCustomerRow>): ColumnDef<ClusterCustomerRow, any>[] {
+  const { detailHref } = opts;
   return [
+    selectColumn(opts),
     {
       id: "phone",
       header: "No HP",
@@ -121,8 +212,13 @@ export function buildClusterCustomerColumns(detailHref: (id: number) => string):
     {
       id: "name",
       header: "Nama",
-      size: 180,
-      cell: ({ row }) => row.original.displayName,
+      size: 200,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5">
+          <NewBadge show={row.original.isNew} />
+          <span className="truncate">{row.original.displayName}</span>
+        </div>
+      ),
     },
     {
       id: "totalBelanja",
@@ -182,6 +278,7 @@ export function buildClusterCustomerColumns(detailHref: (id: number) => string):
         </span>
       ),
     },
+    actionsColumn(opts),
   ];
 }
 

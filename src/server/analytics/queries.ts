@@ -1,5 +1,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
+import { getDatasetContext } from "./dataset";
+import type { DatasetContext } from "@/lib/dataset-types";
 import { buildFrequencyRows, buildRetentionRows } from "./transform";
 import type {
   DashboardSummary,
@@ -22,17 +24,20 @@ const LEGACY_MAX_MONTH = 24;
  * order di-upsert, source_batch_id ikut pindah ke batch baru, jadi memfilter
  * is_active akan membuang order yang kebetulan tidak ikut di file terakhir.
  *
- * `is_active` tetap dipakai sebagai gerbang "sudah ada dataset atau belum" lewat
- * EXISTS — tanpa batch aktif, seluruh analytics kosong (empty state). Ini juga
- * yang dipakai rebuildRfm/rebuildClusters, sehingga RFM/Cluster dan
+ * `is_active` tetap dipakai sebagai gerbang "sudah ada dataset atau belum" —
+ * tanpa batch aktif, seluruh analytics kosong (empty state). Ini juga yang
+ * dipakai rebuildRfm/rebuildClusters, sehingga RFM/Cluster dan
  * Cohort/Retention/Frequency selalu memakai basis yang sama.
+ *
+ * DULU gerbang ini berupa EXISTS(...) yang ditempel di SETIAP query, dan
+ * as_of_date diambil lewat query MAX(order_date) tersendiri di setiap fungsi
+ * (Dashboard sampai 3x per load). Sekarang keduanya diambil SEKALI lewat
+ * getDatasetContext() lalu dioper sebagai parameter — hasil angkanya identik,
+ * jumlah round-trip berkurang.
  */
-const HAS_ACTIVE_DATASET = sql`
-  EXISTS (
-    SELECT 1 FROM import_batches b
-    WHERE b.source_type = 'DATABASE_ALL' AND b.is_active = true
-  )
-`;
+function datasetGate(ctx: DatasetContext): SQL {
+  return ctx.hasActiveDatabaseAll ? sql`true` : sql`false`;
+}
 
 /**
  * customer_rfm_current sekarang juga berisi customer KSB-murni (frequency=0,
@@ -44,11 +49,13 @@ const HAS_ACTIVE_DATASET = sql`
  */
 const HAS_PROBETES_ORDER = sql`r.frequency > 0`;
 
-const CANONICAL_ORDERS = sql`
-  SELECT o.customer_id, o.order_date, o.order_total
-  FROM orders o
-  WHERE ${HAS_ACTIVE_DATASET}
-`;
+function canonicalOrders(ctx: DatasetContext): SQL {
+  return sql`
+    SELECT o.customer_id, o.order_date, o.order_total
+    FROM orders o
+    WHERE ${datasetGate(ctx)}
+  `;
+}
 
 type RetentionDbRow = {
   cohort: string;
@@ -79,17 +86,13 @@ type DistributionDbRow = {
   customers: string;
 };
 
-export async function getRetentionAnalytics(): Promise<RetentionAnalytics> {
+export async function getRetentionAnalytics(context?: DatasetContext): Promise<RetentionAnalytics> {
   const db = getDb();
-  const [asOfResult, result] = await Promise.all([
-    db.execute<{ as_of_date: string | null }>(sql`
-      SELECT MAX(o.order_date)::text AS as_of_date
-      FROM orders o
-      WHERE ${HAS_ACTIVE_DATASET}
-    `),
+  const ctx = context ?? (await getDatasetContext());
+  const [result] = await Promise.all([
     db.execute<RetentionDbRow>(sql`
       WITH active_orders AS (
-        ${CANONICAL_ORDERS}
+        ${canonicalOrders(ctx)}
       ),
       dataset AS (
         SELECT MAX(order_date) AS as_of_date FROM active_orders
@@ -217,7 +220,7 @@ export async function getRetentionAnalytics(): Promise<RetentionAnalytics> {
   const m1 = rows.flatMap((row) => (row.months[1] ? [row.months[1].ratio] : []));
 
   return {
-    asOfDate: asOfResult.rows[0]?.as_of_date ?? null,
+    asOfDate: ctx.asOfDate,
     maxMonth: LEGACY_MAX_MONTH,
     averageM1Retention: m1.length
       ? m1.reduce((sum, value) => sum + value, 0) / m1.length
@@ -228,17 +231,13 @@ export async function getRetentionAnalytics(): Promise<RetentionAnalytics> {
   };
 }
 
-export async function getFrequencyAnalytics(): Promise<FrequencyAnalytics> {
+export async function getFrequencyAnalytics(context?: DatasetContext): Promise<FrequencyAnalytics> {
   const db = getDb();
-  const [asOfResult, distributionResult, funnelResult] = await Promise.all([
-    db.execute<{ as_of_date: string | null }>(sql`
-      SELECT MAX(o.order_date)::text AS as_of_date
-      FROM orders o
-      WHERE ${HAS_ACTIVE_DATASET}
-    `),
+  const ctx = context ?? (await getDatasetContext());
+  const [distributionResult, funnelResult] = await Promise.all([
     db.execute<DistributionDbRow>(sql`
       WITH active_orders AS (
-        SELECT o.customer_id FROM orders o WHERE ${HAS_ACTIVE_DATASET}
+        SELECT o.customer_id FROM orders o WHERE ${datasetGate(ctx)}
       ),
       frequency AS (
         SELECT customer_id, COUNT(*)::integer AS total_orders
@@ -262,7 +261,7 @@ export async function getFrequencyAnalytics(): Promise<FrequencyAnalytics> {
     `),
     db.execute<FrequencyDbRow>(sql`
       WITH active_orders AS (
-        ${CANONICAL_ORDERS}
+        ${canonicalOrders(ctx)}
       ),
       ranked AS (
         SELECT
@@ -297,7 +296,7 @@ export async function getFrequencyAnalytics(): Promise<FrequencyAnalytics> {
   );
 
   return {
-    asOfDate: asOfResult.rows[0]?.as_of_date ?? null,
+    asOfDate: ctx.asOfDate,
     maxOrder,
     distribution: distributionResult.rows.map((row) => ({
       bucket: row.bucket,
@@ -347,12 +346,10 @@ const MONETARY_BUCKET_CASE = sql.join(
 
 const FREQUENCY_BUCKET_CASE = sql`CASE WHEN frequency >= 5 THEN 'F5+' ELSE 'F' || frequency::text END`;
 
-export async function getRfmAnalytics(): Promise<RfmAnalytics> {
+export async function getRfmAnalytics(context?: DatasetContext): Promise<RfmAnalytics> {
   const db = getDb();
-  const [asOfResult, kpiResult, recencyResult, monetaryResult, heatmapResult] = await Promise.all([
-    db.execute<{ as_of_date: string | null }>(sql`
-      SELECT MAX(o.order_date)::text AS as_of_date FROM orders o WHERE ${HAS_ACTIVE_DATASET}
-    `),
+  const ctx = context ?? (await getDatasetContext());
+  const [kpiResult, recencyResult, monetaryResult, heatmapResult] = await Promise.all([
     db.execute<{
       eligible: string;
       needs_review: string;
@@ -368,18 +365,18 @@ export async function getRfmAnalytics(): Promise<RfmAnalytics> {
         AVG(r.monetary)::text AS avg_monetary
       FROM customer_rfm_current r
       LEFT JOIN customer_cluster_current cc ON cc.customer_id = r.customer_id
-      WHERE ${HAS_ACTIVE_DATASET} AND ${HAS_PROBETES_ORDER}
+      WHERE ${datasetGate(ctx)} AND ${HAS_PROBETES_ORDER}
     `),
     db.execute<{ bucket: string; customers: string }>(sql`
       SELECT ${RECENCY_BUCKET_CASE} AS bucket, COUNT(*)::text AS customers
       FROM customer_rfm_current r
-      WHERE ${HAS_ACTIVE_DATASET} AND ${HAS_PROBETES_ORDER}
+      WHERE ${datasetGate(ctx)} AND ${HAS_PROBETES_ORDER}
       GROUP BY 1
     `),
     db.execute<{ bucket: string; customers: string }>(sql`
       SELECT ${MONETARY_BUCKET_CASE} AS bucket, COUNT(*)::text AS customers
       FROM customer_rfm_current r
-      WHERE ${HAS_ACTIVE_DATASET} AND ${HAS_PROBETES_ORDER}
+      WHERE ${datasetGate(ctx)} AND ${HAS_PROBETES_ORDER}
       GROUP BY 1
     `),
     db.execute<{ recency_bucket: string; frequency_bucket: string; customers: string }>(sql`
@@ -388,7 +385,7 @@ export async function getRfmAnalytics(): Promise<RfmAnalytics> {
         ${FREQUENCY_BUCKET_CASE} AS frequency_bucket,
         COUNT(*)::text AS customers
       FROM customer_rfm_current r
-      WHERE ${HAS_ACTIVE_DATASET} AND ${HAS_PROBETES_ORDER}
+      WHERE ${datasetGate(ctx)} AND ${HAS_PROBETES_ORDER}
       GROUP BY 1, 2
     `),
   ]);
@@ -412,7 +409,7 @@ export async function getRfmAnalytics(): Promise<RfmAnalytics> {
 
   const kpi = kpiResult.rows[0];
   return {
-    asOfDate: asOfResult.rows[0]?.as_of_date ?? null,
+    asOfDate: ctx.asOfDate,
     eligibleCustomers: Number(kpi?.eligible ?? 0),
     needsReviewCustomers: Number(kpi?.needs_review ?? 0),
     avgRecencyDays: Number(kpi?.avg_recency ?? 0),
@@ -445,13 +442,14 @@ function orderDateCondition(filter?: DashboardDateFilter): SQL {
   return conditions.reduce((acc, condition, index) => (index === 0 ? condition : sql`${acc} AND ${condition}`));
 }
 
-export async function getDashboardSummary(filter?: DashboardDateFilter): Promise<DashboardSummary> {
+export async function getDashboardSummary(
+  filter?: DashboardDateFilter,
+  context?: DatasetContext
+): Promise<DashboardSummary> {
   const db = getDb();
+  const ctx = context ?? (await getDatasetContext());
   const dateCondition = orderDateCondition(filter);
-  const [asOfResult, kpiResult, monthlyResult, activeBatchResult] = await Promise.all([
-    db.execute<{ as_of_date: string | null }>(sql`
-      SELECT MAX(o.order_date)::text AS as_of_date FROM orders o WHERE ${HAS_ACTIVE_DATASET}
-    `),
+  const [kpiResult, monthlyResult, activeBatchResult] = await Promise.all([
     db.execute<{
       eligible: string;
       needs_review: string;
@@ -462,12 +460,12 @@ export async function getDashboardSummary(filter?: DashboardDateFilter): Promise
       SELECT
         COUNT(*) FILTER (WHERE cc.cluster_code IS DISTINCT FROM 'NEEDS_REVIEW')::text AS eligible,
         COUNT(*) FILTER (WHERE cc.cluster_code = 'NEEDS_REVIEW')::text AS needs_review,
-        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE ${HAS_ACTIVE_DATASET} AND ${dateCondition})::text AS total_order_value,
+        (SELECT COALESCE(SUM(order_total), 0) FROM orders WHERE ${datasetGate(ctx)} AND ${dateCondition})::text AS total_order_value,
         AVG(r.frequency)::text AS avg_frequency,
         AVG(r.monetary)::text AS avg_monetary
       FROM customer_rfm_current r
       LEFT JOIN customer_cluster_current cc ON cc.customer_id = r.customer_id
-      WHERE ${HAS_ACTIVE_DATASET} AND ${HAS_PROBETES_ORDER}
+      WHERE ${datasetGate(ctx)} AND ${HAS_PROBETES_ORDER}
     `),
     db.execute<{ month: string; customers: string; revenue: string }>(sql`
       SELECT
@@ -475,7 +473,7 @@ export async function getDashboardSummary(filter?: DashboardDateFilter): Promise
         COUNT(DISTINCT o.customer_id)::text AS customers,
         SUM(o.order_total)::text AS revenue
       FROM orders o
-      WHERE ${HAS_ACTIVE_DATASET} AND ${dateCondition}
+      WHERE ${datasetGate(ctx)} AND ${dateCondition}
       GROUP BY 1
       ORDER BY 1
     `),
@@ -499,7 +497,7 @@ export async function getDashboardSummary(filter?: DashboardDateFilter): Promise
   const batch = activeBatchResult.rows[0];
 
   return {
-    asOfDate: asOfResult.rows[0]?.as_of_date ?? null,
+    asOfDate: ctx.asOfDate,
     eligibleCustomers: Number(kpi?.eligible ?? 0),
     totalOrderValue: BigInt(kpi?.total_order_value ?? "0"),
     avgFrequency: Number(kpi?.avg_frequency ?? 0),
@@ -516,8 +514,8 @@ export async function getDashboardSummary(filter?: DashboardDateFilter): Promise
           needsReviewCustomers: Number(kpi?.needs_review ?? 0),
         }
       : null,
-    activeSources: {
-      databaseAll: batch ? { rows: batch.total_rows, asOfDate: batch.as_of_date } : null,
-    },
+    // Diisi server action pemanggil dari listActiveSources() — status NYATA
+    // ketiga sumber, bukan placeholder yang di-hardcode di komponen.
+    activeSources: [],
   };
 }

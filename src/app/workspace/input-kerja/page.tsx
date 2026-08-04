@@ -3,6 +3,7 @@ import { CRM_REPORT_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
 import { CrmReportManager } from "@/components/crm-report/crm-report-manager";
 import { CrmReportSearchFilter } from "@/components/crm-report/crm-report-search-filter";
+import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CrmReportListFilter } from "@/lib/crm-report-contracts";
 
@@ -55,19 +56,19 @@ export default async function WorkspaceInputKerjaPage({ searchParams }: { search
 
   return (
     <AppShell title="Input Kerja">
-      <div className="space-y-4">
-        <CrmReportSearchFilter />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{initialData.total.toLocaleString("id-ID")} laporan</CardTitle>
-            <CardDescription>Klik baris untuk edit · scroll untuk memuat lebih banyak · kolom bisa di-resize</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CrmReportManager filter={filter} initialData={initialData} exportQuery={exportQuery.toString()} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>{initialData.total.toLocaleString("id-ID")} laporan</CardTitle>
+          <CardDescription>Klik baris untuk edit · scroll untuk memuat lebih banyak · kolom bisa di-resize</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <CrmReportSearchFilter />
+            <DateRangeFilter paramFrom="reportFrom" paramTo="reportTo" />
+          </div>
+          <CrmReportManager filter={filter} initialData={initialData} exportQuery={exportQuery.toString()} />
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }

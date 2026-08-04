@@ -1,8 +1,12 @@
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { loadCsAgents, loadCustomerList, loadPics } from "@/app/customers-actions";
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
 import { CustomerSearchFilter } from "@/components/filters/customer-search-filter";
+import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";
+import { BroadcastExportButton } from "@/components/customer/broadcast-export-button";
 import { CustomerListTable } from "@/components/customer/customer-list-table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -53,6 +57,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const recencyMaxRaw = first(params.recencyMax);
   const monetaryMinRaw = first(params.monetaryMin);
   const monetaryMaxRaw = first(params.monetaryMax);
+  const isNewRaw = first(params.isNew);
 
   const filter = {
     search,
@@ -71,6 +76,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
     recencyMax: recencyMaxRaw ? Number(recencyMaxRaw) : undefined,
     monetaryMin: monetaryMinRaw ? Number(monetaryMinRaw) : undefined,
     monetaryMax: monetaryMaxRaw ? Number(monetaryMaxRaw) : undefined,
+    isNew: isNewRaw === "1" ? true : undefined,
   };
 
   let initialData;
@@ -147,37 +153,44 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       clearHref: `/customers?${query.toString()}`,
     });
   }
+  if (filter.isNew) {
+    const query = new URLSearchParams(queryWithout(params, ["isNew"]));
+    activeFilters.push({ label: "Customer Baru", clearHref: `/customers?${query.toString()}` });
+  }
 
   return (
     <AppShell title="Customers">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <CustomerSearchFilter csOptions={csOptions} picOptions={picOptions} />
-          {activeFilters.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {activeFilters.map((f) => (
-                <a key={f.label} href={f.clearHref}>
-                  <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
-                    {f.label} ✕
-                  </Badge>
-                </a>
-              ))}
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle>{initialData.total.toLocaleString("id-ID")} customer</CardTitle>
+            <CardDescription>Klik baris untuk detail lengkap · scroll untuk memuat lebih banyak</CardDescription>
+          </div>
+          {/* FR-24: export menghormati SELURUH filter aktif di halaman ini. */}
+          <BroadcastExportButton filter={filter} expectedRows={initialData.total} />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <CustomerSearchFilter csOptions={csOptions} picOptions={picOptions} />
+              <DateRangeFilter />
+              <NewCustomerToggle active={!!filter.isNew} params={params} />
             </div>
-          ) : null}
-        </div>
-
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
-            <div>
-              <CardTitle>{initialData.total.toLocaleString("id-ID")} customer</CardTitle>
-              <CardDescription>Klik baris untuk detail lengkap · scroll untuk memuat lebih banyak</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <CustomerListTable variant="customer" filter={filter} initialData={initialData} />
-          </CardContent>
-        </Card>
-      </div>
+            {activeFilters.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {activeFilters.map((f) => (
+                  <a key={f.label} href={f.clearHref}>
+                    <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
+                      {f.label} ✕
+                    </Badge>
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <CustomerListTable variant="customer" filter={filter} initialData={initialData} />
+        </CardContent>
+      </Card>
 
       <CustomerDetailSheet picOptions={picOptions} />
     </AppShell>
@@ -191,4 +204,26 @@ function queryWithout(params: SearchParams, exclude: string[]): URLSearchParams 
     if (single && !exclude.includes(key)) query.set(key, single);
   }
   return query;
+}
+
+/** Toggle "Customer Baru" — customer yang first_seen_batch_id = batch Database
+ *  All aktif saat ini (lihat isNew di analytics/customers.ts). Klik untuk
+ *  menyalakan/mematikan filter tanpa kehilangan filter lain yang aktif. */
+function NewCustomerToggle({ active, params }: { active: boolean; params: SearchParams }) {
+  const href = active
+    ? `/customers?${queryWithout(params, ["isNew"]).toString()}`
+    : (() => {
+        const query = queryWithout(params, []);
+        query.set("isNew", "1");
+        return `/customers?${query.toString()}`;
+      })();
+
+  return (
+    <Link href={href}>
+      <Badge variant={active ? "success" : "outline"} className="flex cursor-pointer items-center gap-1 hover:opacity-80">
+        <Sparkles className="h-3 w-3" aria-hidden="true" />
+        Customer Baru
+      </Badge>
+    </Link>
+  );
 }

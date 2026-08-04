@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Sparkles } from "lucide-react";
 import { loadClusterCustomerList, loadClusterDistribution } from "@/app/customers-actions";
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
 import { ClusterBarChart } from "@/components/charts/overview-charts";
+import { BroadcastExportButton } from "@/components/customer/broadcast-export-button";
 import { ClusterCustomerTable } from "@/components/customer/cluster-customer-table";
 import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";
 import { FadeInItem, FadeInStagger } from "@/components/motion/fade-in";
@@ -29,9 +30,10 @@ const toneClasses = {
 export default async function ClusterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cluster?: string }>;
+  searchParams: Promise<{ cluster?: string; isNew?: string }>;
 }) {
-  const { cluster: focusParam } = await searchParams;
+  const { cluster: focusParam, isNew: isNewParam } = await searchParams;
+  const isNew = isNewParam === "1" ? true : undefined;
 
   let distribution;
   let dataset;
@@ -82,7 +84,7 @@ export default async function ClusterPage({
   const focusCard = cards.find((c) => c.code === focus)!;
 
   const needsReview = countByCode.get("NEEDS_REVIEW")?.customers ?? 0;
-  const filter = { cluster: focus };
+  const filter = { cluster: focus, isNew };
   const initialData = await loadClusterCustomerList({ ...filter, page: 1, perPage: CUSTOMER_LIST_CHUNK });
 
   return (
@@ -126,7 +128,7 @@ export default async function ClusterPage({
                 {cluster.unavailable ? (
                   <div className={className} aria-disabled="true">{content}</div>
                 ) : (
-                  <Link href={`/cluster?cluster=${cluster.code}`} className={className}>{content}</Link>
+                  <Link href={`/cluster?cluster=${cluster.code}${isNew ? "&isNew=1" : ""}`} className={className}>{content}</Link>
                 )}
               </FadeInItem>
             );
@@ -170,6 +172,16 @@ export default async function ClusterPage({
                 <CardTitle>{initialData.total.toLocaleString("id-ID")} customer</CardTitle>
               </div>
               <CardDescription className="mt-1">Klik baris untuk detail · scroll untuk memuat lebih banyak · kolom bisa di-resize</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href={`/cluster?cluster=${focus}${isNew ? "" : "&isNew=1"}`}>
+                <Badge variant={isNew ? "success" : "outline"} className="flex cursor-pointer items-center gap-1 hover:opacity-80">
+                  <Sparkles className="h-3 w-3" aria-hidden="true" />
+                  Customer Baru
+                </Badge>
+              </Link>
+              {/* FR-24: export memakai filter yang sama dengan tabel di bawah. */}
+              <BroadcastExportButton filter={filter} expectedRows={initialData.total} />
             </div>
           </CardHeader>
           <CardContent>

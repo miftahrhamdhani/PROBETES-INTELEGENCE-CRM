@@ -85,12 +85,19 @@ export type ClusterRuleFn = (
   ctx: ClusterContext
 ) => ClusterAssignment | null;
 
-export const A1_MONETARY_THRESHOLD = 1_500_000n;
-export const CLUSTER_B_MIN_YACONA_FREQ = 5; // ">", artinya >= 6
-export const LIFECYCLE_START_DATE = "2025-11-01";
-export const E_WINDOW_START = "2025-03-01";
-export const E_WINDOW_END = "2025-10-31";
-export const D_NEW_MAX_AGE_DAYS = 15;
+/**
+ * Ambang batas di-re-export dari src/lib/cluster-rule-spec.ts (SHARED) supaya
+ * engine dan halaman /rules membaca angka yang SAMA PERSIS — halaman aturan
+ * tidak boleh jadi salinan yang bisa menyimpang. Nilainya tidak berubah.
+ */
+export {
+  A1_MONETARY_THRESHOLD,
+  CLUSTER_B_MIN_YACONA_FREQ,
+  LIFECYCLE_START_DATE,
+  E_WINDOW_START,
+  E_WINDOW_END,
+  D_NEW_MAX_AGE_DAYS,
+} from "@/lib/cluster-rule-spec";
 
 export function priorityOf(code: ClusterCode): number {
   return CLUSTER_PRIORITY[code];

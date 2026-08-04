@@ -1,8 +1,9 @@
 import { eq, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
-import { crmReportItems, crmReports, customers } from "@/server/db/schema";
+import { crmReportItems, crmReports, customers, products } from "@/server/db/schema";
 import { normalizePhone } from "@/server/normalize/phone";
 import type { CrmReportBody, CrmReportListFilter } from "@/lib/crm-report-contracts";
+import { calculateCrmReportTotals } from "@/lib/crm-report-calculation";
 import type { CrmReportDetail, CrmReportListResult, CrmReportRow } from "@/lib/crm-report-types";
 
 export class CrmReportNotFoundError extends Error {}
@@ -35,6 +36,17 @@ function toItemValues(reportId: number, items: CrmReportBody["items"]) {
   }));
 }
 
+function calculatedTotalPayment(input: CrmReportBody): bigint {
+  return BigInt(
+    calculateCrmReportTotals(input.items, {
+      shippingCost: input.shippingCost ?? 0,
+      packingCost: input.packingCost ?? 0,
+      discount: input.discount ?? 0,
+      adminCod: input.adminCod ?? 0,
+    }).totalPayment
+  );
+}
+
 export async function createReport(input: CrmReportBody, userId: number): Promise<number> {
   const { customerId, normalizedPhone } = await resolveCustomer(input.phone);
   const db = getDb();
@@ -53,7 +65,7 @@ export async function createReport(input: CrmReportBody, userId: number): Promis
       packingCost: BigInt(input.packingCost ?? 0),
       discount: BigInt(input.discount ?? 0),
       adminCod: BigInt(input.adminCod ?? 0),
-      totalPayment: BigInt(input.totalPayment ?? 0),
+      totalPayment: calculatedTotalPayment(input),
       csName: input.csName ?? null,
       advName: input.advName ?? null,
       note: input.note ?? null,
@@ -99,7 +111,7 @@ export async function updateReport(id: number, input: CrmReportBody, userId: num
       packingCost: BigInt(input.packingCost ?? 0),
       discount: BigInt(input.discount ?? 0),
       adminCod: BigInt(input.adminCod ?? 0),
-      totalPayment: BigInt(input.totalPayment ?? 0),
+      totalPayment: calculatedTotalPayment(input),
       csName: input.csName ?? null,
       advName: input.advName ?? null,
       note: input.note ?? null,
@@ -233,13 +245,23 @@ export async function listReports(filter: CrmReportListFilter): Promise<CrmRepor
       customer_id: number | null;
       customer_name: string;
       phone: string;
+      address: string | null;
       city: string | null;
+      recipient_district: string | null;
+      expedition: string | null;
+      payment_method: string | null;
       cs_name: string | null;
       adv_name: string | null;
       platform: string | null;
       division: string | null;
       sales_type: string | null;
       report_date: string;
+      total_qty: string;
+      total_product_value: string;
+      shipping_cost: string;
+      packing_cost: string;
+      discount: string;
+      admin_cod: string;
       total_payment: string;
       items_summary: string | null;
       archived_at: string | null;
@@ -251,8 +273,12 @@ export async function listReports(filter: CrmReportListFilter): Promise<CrmRepor
       task_pic_name: string | null;
     }>(sql`
       SELECT
-        r.id, r.customer_id, r.customer_name, r.phone, r.city, r.cs_name, r.adv_name,
-        r.platform, r.division, r.sales_type, r.report_date::text, r.total_payment::text,
+        r.id, r.customer_id, r.customer_name, r.phone, r.address, r.city, r.recipient_district,
+        r.expedition, r.payment_method, r.cs_name, r.adv_name, r.platform, r.division,
+        r.sales_type, r.report_date::text, r.shipping_cost::text, r.packing_cost::text,
+        r.discount::text, r.admin_cod::text, r.total_payment::text,
+        COALESCE((SELECT SUM(i.qty) FROM crm_report_items i WHERE i.crm_report_id = r.id), 0)::text AS total_qty,
+        COALESCE((SELECT SUM(i.qty * i.product_value) FROM crm_report_items i WHERE i.crm_report_id = r.id), 0)::text AS total_product_value,
         (SELECT string_agg(i.product_name || ' x' || i.qty, ', ' ORDER BY i.line_no) FROM crm_report_items i WHERE i.crm_report_id = r.id) AS items_summary,
         r.archived_at::text AS archived_at,
         creator.name AS created_by_name,
@@ -278,13 +304,23 @@ export async function listReports(filter: CrmReportListFilter): Promise<CrmRepor
         customerId: row.customer_id,
         customerName: row.customer_name,
         phone: row.phone,
+        address: row.address,
         city: row.city,
+        recipientDistrict: row.recipient_district,
+        expedition: row.expedition,
+        paymentMethod: row.payment_method,
         csName: row.cs_name,
         advName: row.adv_name,
         platform: row.platform,
         division: row.division,
         salesType: row.sales_type,
         reportDate: row.report_date,
+        totalQty: row.total_qty,
+        totalProductValue: row.total_product_value,
+        shippingCost: row.shipping_cost,
+        packingCost: row.packing_cost,
+        discount: row.discount,
+        adminCod: row.admin_cod,
         totalPayment: row.total_payment,
         itemsSummary: row.items_summary ?? "—",
         archivedAt: row.archived_at,
@@ -412,14 +448,17 @@ export async function getReport(id: number): Promise<CrmReportDetail | null> {
   };
 }
 
-/** Nama produk unik yang pernah diinput CRM — untuk autocomplete input Nama
- *  Produk. Murni bantuan ketik, BUKAN katalog produk canonical (products/
- *  product_aliases) — CRM Report tetap tidak tersambung ke mapping produk. */
+/** Autocomplete menggabungkan katalog aktif dan riwayat input CRM. Pilihan hanya
+ * bantuan ketik; item laporan tetap relational, tanpa foreign key/mapping diam-diam. */
 export async function listReportProductNames(): Promise<string[]> {
-  const result = await getDb().execute<{ product_name: string }>(sql`
-    SELECT DISTINCT product_name FROM crm_report_items ORDER BY product_name LIMIT 500
-  `);
-  return result.rows.map((row) => row.product_name);
+  const db = getDb();
+  const [catalog, history] = await Promise.all([
+    db.select({ name: products.name }).from(products).where(eq(products.active, true)).orderBy(products.name),
+    db.execute<{ product_name: string }>(sql`
+      SELECT DISTINCT product_name FROM crm_report_items ORDER BY product_name LIMIT 500
+    `),
+  ]);
+  return [...new Set([...catalog.map((row) => row.name), ...history.rows.map((row) => row.product_name)])];
 }
 
 const EXPORT_LIMIT = 20_000;

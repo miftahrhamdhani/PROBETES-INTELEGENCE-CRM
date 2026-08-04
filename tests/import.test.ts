@@ -262,3 +262,103 @@ describe("Group list parser", () => {
     expect(result.entries[0]?.sourceList).toBe("masukWA");
   });
 });
+
+/**
+ * as_of_date WAJIB berasal dari order Probetes final, bukan dari seluruh baris
+ * valid. Kalau baris KSB ikut memajukan as_of, recency_days/customer_age_days
+ * (dan lewat itu D-New/D-Old, Dhp-New/Dhp-Old) bergeser, sementara seluruh query
+ * analytics tetap memakai MAX(orders.order_date) yang isinya Probetes saja.
+ * Lihat docs/02-CLUSTER-RULES.md §3.3.
+ */
+describe("as_of_date Probetes-only", () => {
+  it("transaksi Probetes terakhir 1 Agu + transaksi KSB 5 Agu -> as_of tetap 1 Agu", () => {
+    const result = parseDatabaseAll([
+      row(2, {
+        ...BASE,
+        "Tanggal Pesanan": "01/08/2026",
+        "Produk 1": "Ebook 90",
+        "Qty 1": 1,
+        "Nilai Produk": 89_000,
+        idpesan: "PROBETES-TERAKHIR",
+      }),
+      row(3, {
+        ...BASE,
+        "No. HP": "0813 1111 2222",
+        "Tanggal Pesanan": "05/08/2026",
+        "Produk 1": "Yacona 60",
+        "Qty 1": 1,
+        "Nilai Produk": 300_000,
+        idpesan: "KSB-LEBIH-BARU",
+      }),
+    ]);
+
+    expect(result.asOfDate).toBe("2026-08-01");
+    expect(result.ksbTransactions).toHaveLength(1);
+    expect(result.ksbTransactions[0]?.transactionDate).toBe("2026-08-05");
+    // Order Probetes tidak ikut terbawa tanggal KSB.
+    expect(result.orders.map((o) => o.orderDate)).toEqual(["2026-08-01"]);
+  });
+
+  it("order campuran Probetes+KSB di hari yang sama tetap menghitung hari itu", () => {
+    const result = parseDatabaseAll([
+      row(2, {
+        ...BASE,
+        "Tanggal Pesanan": "10/08/2026",
+        "Produk 1": "Ebook 90",
+        "Nilai Produk": 89_000,
+        idpesan: "MIX-1",
+      }),
+      row(3, {
+        ...BASE,
+        "Tanggal Pesanan": "10/08/2026",
+        "Produk 1": "Yacona 60",
+        "Nilai Produk": 300_000,
+        idpesan: "MIX-1",
+      }),
+    ]);
+
+    expect(result.asOfDate).toBe("2026-08-10");
+    // Item KSB dikeluarkan dari order Probetes, tapi harinya tetap sah.
+    expect(result.orders[0]?.items).toHaveLength(1);
+    expect(result.orders[0]?.orderTotal).toBe(89_000n);
+  });
+
+  it("file yang isinya HANYA KSB -> as_of null (commit menolak mengaktifkan)", () => {
+    const result = parseDatabaseAll([
+      row(2, {
+        ...BASE,
+        "Tanggal Pesanan": "20/08/2026",
+        "Produk 1": "Yacona 60",
+        "Nilai Produk": 300_000,
+        idpesan: "KSB-ONLY",
+      }),
+    ]);
+
+    expect(result.orders).toHaveLength(0);
+    expect(result.asOfDate).toBeNull();
+    expect(result.ksbTransactions).toHaveLength(1);
+  });
+
+  it("baris excluded tidak pernah memajukan as_of", () => {
+    const result = parseDatabaseAll([
+      row(2, {
+        ...BASE,
+        "Tanggal Pesanan": "01/08/2026",
+        "Produk 1": "Ebook 90",
+        "Nilai Produk": 89_000,
+        idpesan: "VALID",
+      }),
+      row(3, {
+        ...BASE,
+        "No. HP": "",
+        "Tanggal Pesanan": "31/12/2026",
+        "Produk 1": "Ebook 90",
+        "Nilai Produk": 89_000,
+        idpesan: "TANPA-HP",
+      }),
+    ]);
+
+    expect(result.asOfDate).toBe("2026-08-01");
+    expect(result.excluded).toHaveLength(1);
+  });
+});

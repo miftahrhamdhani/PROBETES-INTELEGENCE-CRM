@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { canAccessPath, type UserRole } from "@/lib/roles";
+import { isUserActive } from "./admin";
 import { auth } from "./index";
 
 export class UnauthorizedError extends Error {
@@ -17,10 +19,28 @@ export class ForbiddenError extends Error {
 
 export type SessionUser = { id: string; email: string; name: string; role: UserRole };
 
+/**
+ * Sesi memakai JWT (maxAge 12 jam), jadi menonaktifkan user di halaman Users
+ * TIDAK otomatis mencabut token yang sudah terlanjur terbit. Karena itu status
+ * `active` diperiksa ke DB di sini.
+ *
+ * Dibungkus React `cache()` — memoization per-request, bukan render: satu
+ * request yang memanggil beberapa Server Action hanya menghasilkan SATU query.
+ * Ini satu-satunya tempat src/server boleh menyentuh `react` (lihat pengecualian
+ * di eslint.config.mjs); tidak ada JSX dan tetap bisa diuji tanpa render.
+ */
+const activeCheck = cache(async (userId: number) => isUserActive(userId));
+
 export async function requireSession(): Promise<SessionUser> {
   const session = await auth();
   const user = session?.user;
   if (!user?.role) throw new UnauthorizedError();
+
+  const id = Number(user.id);
+  if (Number.isInteger(id) && id > 0 && !(await activeCheck(id))) {
+    throw new UnauthorizedError("Akun sudah dinonaktifkan");
+  }
+
   return {
     id: user.id ?? "",
     email: user.email ?? "",

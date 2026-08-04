@@ -4,109 +4,24 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  BarChart3,
-  Boxes,
-  Briefcase,
-  ChartNoAxesCombined,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleGauge,
-  ClipboardList,
-  Database,
-  FileClock,
-  FileText,
-  LayoutDashboard,
-  ListTodo,
-  Map,
-  SearchCheck,
-  Settings2,
-  SlidersHorizontal,
-  SquareKanban,
-  Tags,
-  TrendingUp,
-  Upload,
-  UserRound,
-  Users,
-  UsersRound,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { canAccessPath } from "@/lib/roles";
+import {
+  activeCategoryFor,
+  isActivePath,
+  resolveStableRole,
+  visibleNavNodes,
+  type NavCategoryNode,
+  type NavLeaf,
+  type NavLeafNode,
+} from "./nav-tree";
 import { cn } from "@/lib/utils";
 import type { ActiveDatasetInfo } from "@/lib/dataset-types";
 
-type NavLeaf = { href: string; label: string; icon: LucideIcon };
-type NavLeafNode = NavLeaf & { kind: "leaf"; id: string };
-type NavCategoryNode = { kind: "category"; id: string; label: string; icon: LucideIcon; items: NavLeaf[] };
-type NavNode = NavLeafNode | NavCategoryNode;
 
-// Matriks role: docs/05-UI.md §3, sumber tunggal src/lib/roles.ts (dipakai
-// middleware juga) — menu yang tidak boleh diakses tidak ditampilkan.
-const NAV_TREE: NavNode[] = [
-  { kind: "leaf", id: "dashboard", href: "/", label: "Dashboard", icon: LayoutDashboard },
-  {
-    kind: "category",
-    id: "analytics",
-    label: "Analytics",
-    icon: TrendingUp,
-    items: [
-      { href: "/cohort", label: "Cohort & Retention", icon: Map },
-      { href: "/frequency", label: "Frequency", icon: BarChart3 },
-      { href: "/rfm", label: "RFM Analysis", icon: ChartNoAxesCombined },
-      { href: "/cluster", label: "Customer Cluster", icon: Boxes },
-    ],
-  },
-  {
-    kind: "category",
-    id: "customer",
-    label: "Customer",
-    icon: Users,
-    items: [
-      { href: "/customers", label: "Customers", icon: UserRound },
-      { href: "/groups", label: "Group Membership", icon: UsersRound },
-    ],
-  },
-  {
-    kind: "category",
-    id: "workspace",
-    label: "Workspace",
-    icon: Briefcase,
-    items: [
-      { href: "/workspace/overview", label: "Overview", icon: SquareKanban },
-      { href: "/workspace/pembagian-tugas", label: "Pembagian Tugas", icon: ListTodo },
-      { href: "/workspace/input-kerja", label: "Input Kerja", icon: ClipboardList },
-      { href: "/workspace/laporan-kerja", label: "Laporan Kerja", icon: FileText },
-    ],
-  },
-  {
-    kind: "category",
-    id: "data",
-    label: "Data",
-    icon: Database,
-    items: [
-      { href: "/import", label: "Import Database", icon: Upload },
-      { href: "/mapping", label: "Product Mapping", icon: Tags },
-      { href: "/quality", label: "Data Quality", icon: SearchCheck },
-      { href: "/history", label: "Import History", icon: FileClock },
-    ],
-  },
-  {
-    kind: "category",
-    id: "system",
-    label: "System",
-    icon: Settings2,
-    items: [
-      { href: "/rules", label: "Cluster Rules", icon: SlidersHorizontal },
-      { href: "/users", label: "Users", icon: UsersRound },
-    ],
-  },
-];
 
 /** Dipertahankan dari versi lama supaya preferensi user yang sudah tersimpan
  *  tetap valid: "true"/hilang = expanded, "false" = collapsed (dulu berarti
@@ -115,10 +30,6 @@ const SIDEBAR_OPEN_KEY = "sidebar-open";
 const OPEN_CATEGORIES_KEY = "sidebar-open-categories";
 const FLYOUT_CLOSE_DELAY = 180;
 
-function isActivePath(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
 
 function readPersistedCategories(): Set<string> {
   try {
@@ -149,28 +60,16 @@ export function AppSidebar({
   dataset: ActiveDatasetInfo;
 }) {
   const pathname = usePathname();
-  const role = useSession().data?.user?.role;
+  // resolveStableRole: lihat catatan bug "sidebar suka kosong" di nav-tree.ts —
+  // role transien-undefined saat remount tidak boleh mengosongkan menu.
+  const role = resolveStableRole(useSession().data?.user?.role);
   const reduceMotion = !!useReducedMotion();
 
-  const visibleNodes = React.useMemo(() => {
-    const nodes: NavNode[] = [];
-    for (const node of NAV_TREE) {
-      if (node.kind === "leaf") {
-        if (canAccessPath(role, node.href)) nodes.push(node);
-      } else {
-        const items = node.items.filter((item) => canAccessPath(role, item.href));
-        if (items.length) nodes.push({ ...node, items });
-      }
-    }
-    return nodes;
-  }, [role]);
-
-  const activeCategoryId = React.useMemo(() => {
-    const match = visibleNodes.find(
-      (node) => node.kind === "category" && node.items.some((item) => isActivePath(pathname, item.href))
-    );
-    return match?.id ?? null;
-  }, [visibleNodes, pathname]);
+  const visibleNodes = React.useMemo(() => visibleNavNodes(role), [role]);
+  const activeCategoryId = React.useMemo(
+    () => activeCategoryFor(visibleNodes, pathname),
+    [visibleNodes, pathname]
+  );
 
   const [openCategories, setOpenCategories] = React.useState<Set<string>>(new Set());
   const [hydrated, setHydrated] = React.useState(false);
@@ -249,69 +148,10 @@ export function AppSidebar({
     <TooltipProvider delayDuration={250}>
       <aside
         className={cn(
-          "sticky top-0 hidden h-screen shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out motion-reduce:transition-none lg:flex",
+          "sticky top-14 hidden h-[calc(100vh-3.5rem)] shrink-0 flex-col bg-card transition-[width] duration-200 ease-in-out motion-reduce:transition-none lg:flex",
           collapsed ? "w-16" : "w-60"
         )}
       >
-        <div className={cn("flex items-center gap-2 border-b py-4", collapsed ? "justify-center px-2" : "px-3")}>
-          <div className={cn("flex min-w-0 items-center gap-2.5", !collapsed && "flex-1 px-2")}>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <CircleGauge className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <AnimatePresence initial={false}>
-              {!collapsed ? (
-                <motion.div
-                  key="brand"
-                  initial={reduceMotion ? undefined : { opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={reduceMotion ? undefined : { opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="min-w-0"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold tracking-tight">PROBETES</span>
-                    <Badge className="px-1.5 py-0 text-[9px]">V1</Badge>
-                  </div>
-                  <p className="truncate text-[11px] text-muted-foreground">Customer Intelligence</p>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </div>
-          {!collapsed ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={onToggleCollapsed}
-              aria-label="Ciutkan sidebar"
-              title="Ciutkan sidebar"
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          ) : null}
-        </div>
-
-        {collapsed ? (
-          <div className="flex justify-center border-b py-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9"
-                  onClick={onToggleCollapsed}
-                  aria-label="Perluas sidebar"
-                >
-                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Perluas sidebar</TooltipContent>
-            </Tooltip>
-          </div>
-        ) : null}
-
         <nav
           className={cn("scrollbar-thin flex-1 overflow-y-auto overflow-x-hidden py-3", collapsed ? "px-2" : "px-3")}
           aria-label="Navigasi utama"
@@ -351,7 +191,7 @@ export function AppSidebar({
           </div>
         </nav>
 
-        <div className="border-t p-3">
+        <div className="p-3">
           {collapsed ? (
             <div className="flex justify-center">
               <Tooltip>
@@ -394,6 +234,27 @@ export function AppSidebar({
               ) : null}
             </div>
           )}
+          <div className={cn("mt-2 flex", collapsed ? "justify-center" : "justify-end")}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9"
+                  onClick={onToggleCollapsed}
+                  aria-label={collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}
+                >
+                  {collapsed ? (
+                    <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{collapsed ? "Perluas sidebar" : "Ciutkan sidebar"}</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </aside>
     </TooltipProvider>
@@ -401,11 +262,11 @@ export function AppSidebar({
 }
 
 function ActivePill({ reduceMotion, layoutId }: { reduceMotion: boolean; layoutId: string }) {
-  if (reduceMotion) return <span className="absolute inset-0 rounded-md bg-primary" aria-hidden="true" />;
+  if (reduceMotion) return <span className="absolute inset-0 rounded-md bg-[#020945] dark:bg-white" aria-hidden="true" />;
   return (
     <motion.span
       layoutId={layoutId}
-      className="absolute inset-0 rounded-md bg-primary"
+      className="absolute inset-0 rounded-md bg-[#020945] dark:bg-white"
       transition={{ type: "spring", stiffness: 500, damping: 35 }}
       aria-hidden="true"
     />
@@ -420,7 +281,7 @@ function ExpandedLeaf({ node, active, reduceMotion }: { node: NavLeafNode; activ
       aria-current={active ? "page" : undefined}
       className={cn(
         "relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active ? "text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        active ? "text-primary-foreground shadow-sm dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-expanded" /> : null}
@@ -438,7 +299,7 @@ function ExpandedChildLink({ item, active, reduceMotion }: { item: NavLeaf; acti
       aria-current={active ? "page" : undefined}
       className={cn(
         "relative flex h-8 items-center gap-2.5 rounded-md pl-4 pr-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active ? "text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+        active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
     >
       {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-expanded" /> : null}
@@ -529,7 +390,7 @@ function RailLeaf({ node, active, reduceMotion }: { node: NavLeafNode; active: b
           aria-label={node.label}
           className={cn(
             "relative flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            active ? "text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
         >
           {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-rail" /> : null}
@@ -575,7 +436,7 @@ function RailCategory({
           onClick={() => (open ? onCloseNow() : onOpen())}
           className={cn(
             "relative flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            active ? "text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
         >
           {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-rail" /> : null}
@@ -604,7 +465,7 @@ function RailCategory({
                 aria-current={itemActive ? "page" : undefined}
                 className={cn(
                   "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors",
-                  itemActive ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-accent"
+                  itemActive ? "bg-[#020945] text-primary-foreground dark:bg-white dark:text-[#020945]" : "text-foreground hover:bg-accent"
                 )}
               >
                 <ItemIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

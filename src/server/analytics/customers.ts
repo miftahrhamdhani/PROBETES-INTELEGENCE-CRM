@@ -46,6 +46,80 @@ function phoneFragment(value: string): string {
   return digits;
 }
 
+/** Diekspor supaya export broadcast (FR-24) memakai filter yang SAMA PERSIS
+ *  dengan daftar di layar — bukan query terpisah yang bisa menyimpang. */
+export function buildCustomerConditions(filter: CustomerListFilter): SQL[] {
+  return buildConditions(filter);
+}
+
+/**
+ * Search global (header) — SENGAJA query ringan terpisah dari listCustomers:
+ * tidak join RFM/cluster/membership/CS sama sekali, hanya id+nama+HP, karena
+ * ini dipanggil per keystroke (debounced) dari header yang tampil di semua
+ * halaman. Payload penuh listCustomers tidak perlu untuk sekadar "temukan
+ * customer ini lalu buka detailnya".
+ */
+export async function quickSearchCustomers(
+  query: string,
+  limit = 8
+): Promise<{ id: number; name: string; phone: string }[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const fragment = phoneFragment(q);
+  const db = getDb();
+  const result = await db.execute<{ id: number; name: string | null; phone: string }>(sql`
+    SELECT c.id, c.name, c.normalized_phone AS phone
+    FROM customers c
+    WHERE c.name IS NOT NULL AND btrim(c.name) <> '' AND c.archived_at IS NULL
+      AND (
+        c.name ILIKE ${"%" + q + "%"}
+        ${fragment.length >= 3 ? sql`OR c.normalized_phone LIKE ${"%" + fragment + "%"}` : sql``}
+      )
+    ORDER BY c.name
+    LIMIT ${Math.min(Math.max(limit, 1), 20)}
+  `);
+  return result.rows.map((row) => ({ id: row.id, name: row.name?.trim() || "(tanpa nama)", phone: row.phone }));
+}
+
+export function andAll(conditions: SQL[]): SQL {
+  return conditions.reduce((acc, condition, index) =>
+    index === 0 ? condition : sql`${acc} AND ${condition}`
+  );
+}
+
+/**
+ * CURSOR (keyset) PAGINATION.
+ *
+ * Urutan tabel: monetary DESC, lalu c.id ASC sebagai pemecah seri. Dengan OFFSET,
+ * setiap batch berikutnya harus memindai ulang seluruh baris sebelumnya —
+ * halaman dalam makin lambat. Dengan cursor, batch berikutnya langsung melompat
+ * ke posisi terakhir.
+ *
+ * `monetary` bisa NULL (customer tanpa baris RFM); COALESCE(...,-1) membuat
+ * urutannya total tanpa mengubah hasil — semua monetary >= 0, jadi NULL tetap
+ * di paling belakang persis seperti NULLS LAST sebelumnya.
+ *
+ * Perbandingan ditulis eksplisit (bukan row-comparison) karena arah kedua kolom
+ * berbeda: monetary menurun, id menaik.
+ */
+const CURSOR_ORDER = sql`COALESCE(r.monetary, -1) DESC, c.id ASC`;
+
+export function encodeCursor(monetary: string | null, customerId: number): string {
+  return `${monetary ?? "-1"}:${customerId}`;
+}
+
+function cursorCondition(cursor: string | undefined): SQL | null {
+  if (!cursor) return null;
+  const [rawMonetary, rawId] = cursor.split(":");
+  const id = Number(rawId);
+  if (!rawMonetary || !Number.isInteger(id) || id <= 0) return null;
+  if (!/^-?\d+$/.test(rawMonetary)) return null;
+  return sql`(
+    COALESCE(r.monetary, -1) < ${rawMonetary}::bigint
+    OR (COALESCE(r.monetary, -1) = ${rawMonetary}::bigint AND c.id > ${id})
+  )`;
+}
+
 function buildConditions(filter: CustomerListFilter): SQL[] {
   const conditions: SQL[] = [
     HAS_ACTIVE_DATASET,
@@ -110,6 +184,18 @@ function buildConditions(filter: CustomerListFilter): SQL[] {
     conditions.push(sql`to_char(r.cohort_month, 'YYYY-MM') = ${filter.cohortMonth}`);
   }
 
+  // "Customer Baru" — customer yang first_seen_batch_id-nya SAMA dengan batch
+  // Database All yang sedang aktif. Relatif terhadap batch aktif (bukan window
+  // hari), jadi begitu ada commit import berikutnya, badge/filter ini otomatis
+  // pindah ke customer dari upload TERBARU saja — bukan status permanen.
+  if (filter.isNew) {
+    conditions.push(sql`
+      c.first_seen_batch_id = (
+        SELECT id FROM import_batches WHERE source_type = 'DATABASE_ALL' AND is_active = true
+      )
+    `);
+  }
+
   if (typeof filter.frequency === "number") {
     conditions.push(sql`r.frequency = ${filter.frequency}`);
   }
@@ -162,18 +248,19 @@ function buildConditions(filter: CustomerListFilter): SQL[] {
   return conditions;
 }
 
-function andAll(conditions: SQL[]): SQL {
-  return conditions.reduce((acc, condition, index) =>
-    index === 0 ? condition : sql`${acc} AND ${condition}`
-  );
-}
-
 export async function listCustomers(filter: CustomerListFilter): Promise<CustomerListResult> {
   const perPage = Math.min(Math.max(filter.perPage ?? DEFAULT_PER_PAGE, 1), MAX_PER_PAGE);
   const page = Math.max(filter.page ?? 1, 1);
-  const offset = (page - 1) * perPage;
-  const where = andAll(buildConditions(filter));
+  const conditions = buildConditions(filter);
+  const cursor = cursorCondition(filter.cursor);
+  if (cursor) conditions.push(cursor);
+  const where = andAll(conditions);
   const db = getDb();
+
+  // COUNT hanya dijalankan saat batch PERTAMA (belum ada cursor). Batch
+  // berikutnya tidak mengulang join penuh — totalnya tidak berubah selama
+  // filter sama, dan hook di client mempertahankan nilai dari batch pertama.
+  const needsTotal = !cursor;
 
   const [rows, totals] = await Promise.all([
     db.execute<{
@@ -191,6 +278,7 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
       pic_name: string | null;
       cs_names: string | null;
       review_reason: string | null;
+      is_new: boolean;
     }>(sql`
       SELECT
         c.id AS customer_id,
@@ -213,28 +301,36 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
         ) AS cs_names,
         CASE WHEN cc.cluster_code = 'NEEDS_REVIEW' THEN
           (SELECT string_agg(elem->>'label', '; ') FROM jsonb_array_elements(cc.reason->'checks') elem)
-        ELSE NULL END AS review_reason
+        ELSE NULL END AS review_reason,
+        (ab.id IS NOT NULL AND c.first_seen_batch_id = ab.id) AS is_new
       FROM customers c
       LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
       LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
       LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
       LEFT JOIN users pic ON pic.id = gm.pic_user_id
+      LEFT JOIN import_batches ab ON ab.source_type = 'DATABASE_ALL' AND ab.is_active = true
       WHERE ${where}
-      ORDER BY r.monetary DESC NULLS LAST, c.id
-      LIMIT ${perPage} OFFSET ${offset}
+      ORDER BY ${CURSOR_ORDER}
+      LIMIT ${perPage}
     `),
-    db.execute<{ total: string }>(sql`
-      SELECT COUNT(*)::text AS total
-      FROM customers c
-      LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
-      LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
-      LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
-      LEFT JOIN users pic ON pic.id = gm.pic_user_id
-      WHERE ${where}
-    `),
+    needsTotal
+      ? db.execute<{ total: string }>(sql`
+          SELECT COUNT(*)::text AS total
+          FROM customers c
+          LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
+          LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
+          LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
+          LEFT JOIN users pic ON pic.id = gm.pic_user_id
+          WHERE ${where}
+        `)
+      : Promise.resolve({ rows: [] as { total: string }[] }),
   ]);
 
+  const last = rows.rows[rows.rows.length - 1];
+
   return {
+    nextCursor:
+      rows.rows.length === perPage && last ? encodeCursor(last.monetary, last.customer_id) : null,
     rows: rows.rows.map(
       (row): CustomerListRow => ({
         customerId: row.customer_id,
@@ -251,6 +347,7 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
         picName: row.pic_name,
         csNames: row.cs_names ?? "—",
         reviewReason: row.review_reason,
+        isNew: row.is_new,
       })
     ),
     total: Number(totals.rows[0]?.total ?? 0),
@@ -268,8 +365,11 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
 export async function listClusterCustomers(filter: CustomerListFilter): Promise<ClusterCustomerListResult> {
   const perPage = Math.min(Math.max(filter.perPage ?? DEFAULT_PER_PAGE, 1), MAX_PER_PAGE);
   const page = Math.max(filter.page ?? 1, 1);
-  const offset = (page - 1) * perPage;
-  const where = andAll(buildConditions(filter));
+  const conditions = buildConditions(filter);
+  const cursor = cursorCondition(filter.cursor);
+  if (cursor) conditions.push(cursor);
+  const where = andAll(conditions);
+  const needsTotal = !cursor;
   const db = getDb();
 
   const [rows, totals] = await Promise.all([
@@ -285,6 +385,7 @@ export async function listClusterCustomers(filter: CustomerListFilter): Promise<
       membership_status: MembershipStatusValue;
       products_purchased: string | null;
       cs_names: string | null;
+      is_new: boolean;
     }>(sql`
       SELECT
         c.id AS customer_id,
@@ -314,28 +415,36 @@ export async function listClusterCustomers(filter: CustomerListFilter): Promise<
           FROM orders o
           JOIN cs_agents a ON a.id = o.cs_id
           WHERE o.customer_id = c.id
-        ) AS cs_names
+        ) AS cs_names,
+        (ab.id IS NOT NULL AND c.first_seen_batch_id = ab.id) AS is_new
       FROM customers c
       LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
       LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
       LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
       LEFT JOIN users pic ON pic.id = gm.pic_user_id
+      LEFT JOIN import_batches ab ON ab.source_type = 'DATABASE_ALL' AND ab.is_active = true
       WHERE ${where}
-      ORDER BY r.monetary DESC NULLS LAST, c.id
-      LIMIT ${perPage} OFFSET ${offset}
+      ORDER BY ${CURSOR_ORDER}
+      LIMIT ${perPage}
     `),
-    db.execute<{ total: string }>(sql`
-      SELECT COUNT(*)::text AS total
-      FROM customers c
-      LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
-      LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
-      LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
-      LEFT JOIN users pic ON pic.id = gm.pic_user_id
-      WHERE ${where}
-    `),
+    needsTotal
+      ? db.execute<{ total: string }>(sql`
+          SELECT COUNT(*)::text AS total
+          FROM customers c
+          LEFT JOIN customer_rfm_current r ON r.customer_id = c.id
+          LEFT JOIN customer_cluster_current cc ON cc.customer_id = c.id
+          LEFT JOIN customer_group_memberships gm ON gm.customer_id = c.id
+          LEFT JOIN users pic ON pic.id = gm.pic_user_id
+          WHERE ${where}
+        `)
+      : Promise.resolve({ rows: [] as { total: string }[] }),
   ]);
 
+  const last = rows.rows[rows.rows.length - 1];
+
   return {
+    nextCursor:
+      rows.rows.length === perPage && last ? encodeCursor(last.monetary, last.customer_id) : null,
     rows: rows.rows.map(
       (row): ClusterCustomerRow => ({
         customerId: row.customer_id,
@@ -349,6 +458,7 @@ export async function listClusterCustomers(filter: CustomerListFilter): Promise<
         membershipStatus: row.membership_status,
         productsPurchased: row.products_purchased ?? "—",
         csNames: row.cs_names ?? "—",
+        isNew: row.is_new,
       })
     ),
     total: Number(totals.rows[0]?.total ?? 0),

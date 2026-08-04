@@ -49,23 +49,23 @@
 
   .dark {
     color-scheme: dark;
-    --background: 220 20% 7%;
+    --background: 210 4% 11%;
     --foreground: 210 40% 98%;
-    --card: 220 17% 10%;
+    --card: 210 4% 11%;
     --card-foreground: 210 40% 98%;
     --primary: 213 78% 56%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 22% 17%;
+    --secondary: 210 4% 11%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217 22% 15%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 28% 18%;
-    --accent-foreground: 213 86% 75%;
+    --muted: 210 4% 11%;
+    --muted-foreground: 215 20% 75%;
+    --accent: 210 4% 11%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 63% 45%;
     --destructive-foreground: 0 0% 100%;
-    --border: 217 20% 22%;
-    --input: 217 20% 22%;
-    --ring: 213 78% 56%;
+    --border: 220 3% 34%;
+    --input: 220 3% 34%;
+    --ring: 220 3% 55%;
 
     --chart-surface: #1a1a19;
     --chart-grid: #363634;
@@ -97,4 +97,10 @@
 @layer utilities {
   .tabular { font-variant-numeric: tabular-nums; }
   .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+  .cursor-marquee {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M8.5 2v13M2 8.5h13' stroke='%231a1b1c' stroke-width='1.25'/%3E%3C/svg%3E") 8 8, crosshair;
+  }
+  .dark .cursor-marquee {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M8.5 2v13M2 8.5h13' stroke='white' stroke-width='1.25'/%3E%3C/svg%3E") 8 8, crosshair;
+  }
 }

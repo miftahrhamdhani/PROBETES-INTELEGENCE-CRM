@@ -21,9 +21,13 @@ const ROUTE_ACCESS: ReadonlyArray<{ prefix: string; roles: readonly UserRole[] }
   { prefix: "/mapping", roles: ["ADMIN"] },
   { prefix: "/quality", roles: ["ADMIN"] },
   { prefix: "/history", roles: ["ADMIN"] },
+  { prefix: "/reconciliation", roles: ["ADMIN", "MANAGEMENT"] },
   { prefix: "/rules", roles: ["ADMIN", "MANAGEMENT"] },
   { prefix: "/users", roles: ["ADMIN"] },
   { prefix: "/api/import", roles: ["ADMIN"] },
+  /** Export daftar broadcast (FR-24) — sama dengan hak akses /customers. */
+  { prefix: "/api/customers", roles: ["ADMIN", "CRM"] },
+  { prefix: "/api/crm-reports", roles: ["ADMIN", "CRM"] },
 ];
 
 /** Dashboard: semua role. */

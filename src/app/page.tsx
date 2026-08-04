@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { CustomerTrendChart, FrequencyBarChart, RevenueTrendChart } from "@/components/charts/overview-charts";
 import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { FadeInItem, FadeInStagger } from "@/components/motion/fade-in";
+import { cn } from "@/lib/utils";
+import type { ActiveSourceSummary } from "@/lib/dataset-types";
 
 export const dynamic = "force-dynamic";
 
@@ -140,17 +142,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </Card>
 
             <Card>
-              <CardHeader className="pb-3"><CardTitle>Active sources</CardTitle><CardDescription>Sumber data yang sudah aktif</CardDescription></CardHeader>
+              <CardHeader className="pb-3"><CardTitle>Active sources</CardTitle><CardDescription>Status nyata tiap sumber, dibaca dari import_batches</CardDescription></CardHeader>
               <CardContent className="space-y-3">
-                {summary.activeSources.databaseAll ? (
-                  <SourceRow
-                    name="Database All"
-                    rows={`${formatInteger(summary.activeSources.databaseAll.rows)} rows`}
-                    date={formatDate(summary.activeSources.databaseAll.asOfDate)}
-                  />
-                ) : <p className="text-xs text-muted-foreground">Database All belum aktif.</p>}
-                <PendingSource name="DataKSB" requirement="FR-28" />
-                <PendingSource name="Group List" requirement="FR-29" />
+                {summary.activeSources.map((source) => (
+                  <SourceRow key={source.sourceType} source={source} />
+                ))}
               </CardContent>
             </Card>
           </div>
@@ -166,11 +162,40 @@ function EmptyTrend() {
 function HealthRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return <div className="flex items-center justify-between gap-3 text-xs"><div className="flex items-center gap-2 text-muted-foreground">{icon}<span>{label}</span></div><span className="tabular font-semibold">{value}</span></div>;
 }
-function SourceRow({ name, rows, date }: { name: string; rows: string; date: string }) {
-  return <div className="flex items-center gap-3 rounded-md border p-3"><div className="flex h-8 w-8 items-center justify-center rounded-md bg-accent"><Database className="h-4 w-4 text-primary" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-xs font-medium">{name}</p><Badge variant="success">Active</Badge></div><p className="text-[11px] text-muted-foreground">{rows} · {date}</p></div><FileSpreadsheet className="h-4 w-4 text-muted-foreground" /></div>;
-}
-function PendingSource({ name, requirement }: { name: string; requirement: string }) {
-  return <div className="flex items-center gap-3 rounded-md border border-dashed p-3 opacity-70"><div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted"><Database className="h-4 w-4 text-muted-foreground" /></div><div><p className="text-xs font-medium">{name}</p><p className="text-[11px] text-muted-foreground">Belum diimport · {requirement}</p></div></div>;
+/**
+ * Satu baris sumber data. Semua isinya berasal dari DB (listActiveSources) —
+ * tidak ada teks status yang di-hardcode. Sumber yang memang belum punya batch
+ * aktif tampil sebagai "Belum ada batch aktif" karena `active:false` datang
+ * dari query, bukan karena ditulis di komponen.
+ */
+function SourceRow({ source }: { source: ActiveSourceSummary }) {
+  const detail = source.active
+    ? [
+        source.sourceRows !== null ? `${formatInteger(source.sourceRows)} baris sumber` : null,
+        source.canonicalRows !== null
+          ? `${formatInteger(source.canonicalRows)} ${source.canonicalLabel}`
+          : null,
+        source.asOfDate ? `as of ${formatDate(source.asOfDate)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "Belum ada batch aktif";
+
+  return (
+    <div className={cn("flex items-center gap-3 rounded-md border p-3", !source.active && "border-dashed opacity-70")}>
+      <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", source.active ? "bg-accent" : "bg-muted")}>
+        <Database className={cn("h-4 w-4", source.active ? "text-primary" : "text-muted-foreground")} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-xs font-medium">{source.label}</p>
+          {source.active ? <Badge variant="success">Active</Badge> : <Badge variant="outline">Belum aktif</Badge>}
+        </div>
+        <p className="truncate text-[11px] text-muted-foreground" title={source.filename ?? undefined}>{detail}</p>
+      </div>
+      {source.active ? <FileSpreadsheet className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
+    </div>
+  );
 }
 function formatInteger(value: number) { return value.toLocaleString("id-ID"); }
 function formatDecimal(value: number) { return value.toLocaleString("id-ID", { maximumFractionDigits: 1 }); }

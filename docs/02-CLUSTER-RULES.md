@@ -151,10 +151,24 @@ sistem lama menghitungnya sebagai **satu** order/hari untuk keperluan Frequency 
 ### 3.3 as_of_date
 
 ```
-as_of_date = MAX(order_date) dari dataset aktif      ← BUKAN NOW()
-recency_days = as_of_date − last_order_date
+as_of_date = MAX(order_date) dari ORDER PROBETES kanonik   ← BUKAN NOW()
+recency_days      = as_of_date − last_order_date
 customer_age_days = as_of_date − first_order_date
 ```
+
+**Probetes-only, bukan "seluruh baris valid".** Transaksi KSB TIDAK PERNAH
+memajukan `as_of_date`, walaupun tanggalnya lebih baru. Contoh: order Probetes
+terakhir 1 Agu, ada transaksi Yacona 5 Agu → `as_of_date` tetap **1 Agu**.
+
+Alasannya konsistensi: seluruh query analytics menghitung as_of dari
+`MAX(orders.order_date)`, dan tabel `orders` hanya berisi Probetes (item KSB
+sudah dipisah sejak parser). Kalau import memakai definisi berbeda,
+`recency_days`/`customer_age_days` bergeser — dan lewat itu batas D-New/D-Old
+(15 hari) serta Dhp-New/Dhp-Old (bulan berjalan) ikut salah.
+
+Implementasi: `parseDatabaseAll` menghitung `asOfDate` dari daftar order final
+(setelah item KSB dikeluarkan), bukan di dalam loop per baris.
+Regression test: `tests/import.test.ts` → "as_of_date Probetes-only".
 
 ### 3.4 Monetary
 

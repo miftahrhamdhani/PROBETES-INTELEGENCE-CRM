@@ -1,6 +1,7 @@
 "use server";
 
-import { crmReportSchema, type CrmReportListFilter } from "@/lib/crm-report-contracts";
+import { crmReportSchema } from "@/lib/crm-report-contracts";
+import { crmReportListFilterSchema, idSchema, pageNumberSchema } from "@/lib/list-filter-contracts";
 import { CRM_REPORT_LIST_CHUNK } from "@/lib/list-chunk";
 import { requireRole } from "@/server/auth/guards";
 import {
@@ -14,49 +15,61 @@ import {
   updateReport,
 } from "@/server/crm-report/service";
 
-export async function loadCrmReportList(filter: CrmReportListFilter) {
-  return listReports(filter);
+/**
+ * CRM Report memuat PII (nama, No. HP, alamat penerima) — setiap action di sini,
+ * termasuk action BACA, wajib role guard sendiri. Middleware menyaring per-path
+ * saja, sedangkan action id Next.js global (lihat catatan di customers-actions.ts).
+ */
+const requireReportAccess = () => requireRole("ADMIN", "CRM");
+
+export async function loadCrmReportList(filter: unknown) {
+  await requireReportAccess();
+  return listReports(crmReportListFilterSchema.parse(filter));
 }
 
 /** Dipakai infinite scroll (useInfiniteRows) — sama pola dengan loadCustomerListPage. */
-export async function loadCrmReportListPage(filter: Omit<CrmReportListFilter, "page" | "perPage">, page: number) {
-  return listReports({ ...filter, page, perPage: CRM_REPORT_LIST_CHUNK });
+export async function loadCrmReportListPage(filter: unknown, page: unknown) {
+  await requireReportAccess();
+  const parsed = crmReportListFilterSchema.parse(filter);
+  return listReports({ ...parsed, page: pageNumberSchema.parse(page), perPage: CRM_REPORT_LIST_CHUNK });
 }
 
-export async function loadCrmReportDetail(id: number) {
-  return getReport(id);
+export async function loadCrmReportDetail(id: unknown) {
+  await requireReportAccess();
+  return getReport(idSchema.parse(id));
 }
 
 export async function createCrmReportAction(input: unknown): Promise<{ id: number }> {
-  const user = await requireRole("ADMIN", "CRM");
+  const user = await requireReportAccess();
   const body = crmReportSchema.parse(input);
   const id = await createReport(body, Number(user.id));
   return { id };
 }
 
-export async function updateCrmReportAction(id: number, input: unknown): Promise<void> {
-  const user = await requireRole("ADMIN", "CRM");
+export async function updateCrmReportAction(id: unknown, input: unknown): Promise<void> {
+  const user = await requireReportAccess();
+  const reportId = idSchema.parse(id);
   const body = crmReportSchema.parse(input);
-  await updateReport(id, body, Number(user.id));
+  await updateReport(reportId, body, Number(user.id));
 }
 
-export async function setCrmReportArchivedAction(id: number, archived: boolean): Promise<void> {
-  const user = await requireRole("ADMIN", "CRM");
-  await setReportArchived(id, archived, Number(user.id));
+export async function setCrmReportArchivedAction(id: unknown, archived: unknown): Promise<void> {
+  const user = await requireReportAccess();
+  await setReportArchived(idSchema.parse(id), Boolean(archived), Number(user.id));
 }
 
 export async function loadReportPlatforms() {
-  await requireRole("ADMIN", "CRM");
+  await requireReportAccess();
   return listReportPlatforms();
 }
 
-export async function loadReportTotalValue(filter: CrmReportListFilter) {
-  await requireRole("ADMIN", "CRM");
-  return getReportTotalValue(filter);
+export async function loadReportTotalValue(filter: unknown) {
+  await requireReportAccess();
+  return getReportTotalValue(crmReportListFilterSchema.parse(filter));
 }
 
 /** Autocomplete Nama Produk di form Input Laporan CRM — bukan katalog canonical. */
 export async function loadReportProductNames() {
-  await requireRole("ADMIN", "CRM");
+  await requireReportAccess();
   return listReportProductNames();
 }

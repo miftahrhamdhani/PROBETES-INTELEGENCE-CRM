@@ -1,3 +1,5 @@
+import type { ActiveSourceSummary } from "./dataset-types";
+
 export interface RetentionCell {
   users: number;
   revenue: bigint;
@@ -109,7 +111,7 @@ export interface DashboardSummary {
     unknownProductItems: number;
     needsReviewCustomers: number;
   } | null;
-  activeSources: {
-    databaseAll: { rows: number; asOfDate: string } | null;
-  };
+  /** Status nyata seluruh sumber (Database All / Legacy KSB / Group Membership),
+   *  diisi dari listActiveSources() — tidak ada placeholder di komponen. */
+  activeSources: ActiveSourceSummary[];
 }

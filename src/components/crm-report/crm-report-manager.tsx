@@ -20,6 +20,9 @@ export function CrmReportManager({
   initialData,
   exportQuery,
   showTaskColumns = false,
+  previewRow,
+  reloadKey = 0,
+  hideInputAction = false,
 }: {
   filter: Omit<CrmReportListFilter, "page" | "perPage">;
   initialData: CrmReportListResult;
@@ -27,6 +30,10 @@ export function CrmReportManager({
   exportQuery: string;
   /** true di Workspace > Laporan Kerja — kolom Jenis Tugas/Status/Outcome/PIC dari task yang tertaut. */
   showTaskColumns?: boolean;
+  /** Baris draft realtime di paling atas. id wajib <= 0 agar bukan target CRUD. */
+  previewRow?: CrmReportRow;
+  reloadKey?: number;
+  hideInputAction?: boolean;
 }) {
   const router = useRouter();
   const filterKey = React.useMemo(() => JSON.stringify(filter), [filter]);
@@ -38,11 +45,17 @@ export function CrmReportManager({
   );
 
   async function handleArchiveToggle(row: CrmReportRow) {
+    if (row.id <= 0) return;
     await setCrmReportArchivedAction(row.id, !row.archivedAt);
     reload();
   }
 
   const columns = React.useMemo(() => buildCrmReportColumns(handleArchiveToggle, showTaskColumns), [reload, showTaskColumns]);
+  const displayRows = previewRow ? [previewRow, ...rows] : rows;
+
+  React.useEffect(() => {
+    if (reloadKey > 0) reload();
+  }, [reloadKey, reload]);
 
   return (
     <div className="space-y-3">
@@ -51,11 +64,13 @@ export function CrmReportManager({
           <AnimatedNumber value={total} /> laporan{rows.length > 0 && rows.length < total ? ` · ${rows.length.toLocaleString("id-ID")} dimuat` : ""}
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" asChild>
-            <Link href="/workspace/input-kerja/baru">
-              <Plus className="h-3.5 w-3.5" /> Input Laporan
-            </Link>
-          </Button>
+          {!hideInputAction ? (
+            <Button size="sm" asChild>
+              <Link href="/workspace/input-kerja/baru">
+                <Plus className="h-3.5 w-3.5" /> Input Laporan
+              </Link>
+            </Button>
+          ) : null}
           <Button size="sm" variant="outline" asChild>
             <a href={`/api/crm-reports/export.csv?${exportQuery}`}>
               <Download className="h-3.5 w-3.5" /> Export CSV
@@ -73,13 +88,15 @@ export function CrmReportManager({
 
       <DataTable
         columns={columns}
-        rows={rows}
+        rows={displayRows}
         rowKey={(row) => row.id}
         loading={loading}
         hasMore={hasMore}
         onLoadMore={loadMore}
         emptyMessage="Belum ada laporan CRM. Klik 'Input Laporan' untuk menambahkan."
-        onRowClick={(row) => router.push(`/workspace/input-kerja/${row.id}`)}
+        onRowClick={(row) => {
+          if (row.id > 0) router.push(`/workspace/input-kerja/${row.id}`);
+        }}
       />
     </div>
   );

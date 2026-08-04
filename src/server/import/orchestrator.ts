@@ -18,6 +18,7 @@ import {
   productFlagsForCode,
 } from "@/server/normalize/product-catalog";
 import { detectNewCustomersFromBatch } from "@/server/workspace/detection";
+import { loadApprovedAliasOverlay } from "@/server/product/aliases";
 import { parseDatabaseAll } from "./database-all-parser";
 import type {
   DatabaseAllParseResult,
@@ -105,7 +106,9 @@ export async function validateDatabaseAllImport(batchId: number): Promise<Import
   if (rows.length !== batch.totalRows) {
     throw new Error(`Chunk belum lengkap: ${rows.length}/${batch.totalRows} baris`);
   }
-  const parsed = parseDatabaseAll(rows);
+  // Mapping produk yang sudah di-approve admin ikut dipakai — supaya preview
+  // menampilkan jumlah UNKNOWN yang sama dengan hasil commit nanti.
+  const parsed = parseDatabaseAll(rows, await loadApprovedAliasOverlay());
   const issues = collectIssues(parsed);
   const excludedRows = parsed.excluded.length;
   const needsReviewRows = new Set(
@@ -183,7 +186,7 @@ export async function commitDatabaseAllImport(batchId: number): Promise<ImportCo
   if (batch.status === "COMPLETED") return completedCommitResult(batchId);
   const rows = await loadStagedRows(batchId);
   if (rows.length !== batch.totalRows) throw new Error("Batch belum lengkap");
-  const parsed = parseDatabaseAll(rows);
+  const parsed = parseDatabaseAll(rows, await loadApprovedAliasOverlay());
   if (!parsed.asOfDate) throw new Error("Tidak ada order Probetes valid untuk diaktifkan");
   const asOfDate = parsed.asOfDate;
   const needsReviewRows = new Set(

@@ -1,44 +1,32 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { Upload } from "lucide-react";
-import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { UserMenu } from "@/components/auth/user-menu";
-import { Button } from "@/components/ui/button";
-import { DateRangeFilter } from "@/components/filters/date-range-filter";
-import { canAccessPath } from "@/lib/roles";
+import { GlobalSearch } from "./global-search";
+import { MobileNav } from "./mobile-nav";
 import { ThemeToggle } from "./theme-toggle";
 
-export function GlobalHeader({ title, asOfDate }: { title: string; asOfDate: string | null }) {
+export function GlobalHeader() {
   const user = useSession().data?.user;
-  const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
-      <div className="flex min-h-16 flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between xl:px-6">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-            <p className="text-xs text-muted-foreground">Data as of {formatDate(asOfDate)} · Analytics memakai order kanonik</p>
-          </div>
+    <header className="sticky top-0 z-40 border-b border-[#020945]/20 bg-[#020945] text-primary-foreground dark:border-border dark:bg-black dark:text-foreground">
+      <div className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 px-3 py-2 lg:h-14 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,32rem)_minmax(0,1fr)] lg:gap-3 lg:px-4 lg:py-0 xl:px-6">
+        <MobileNav />
+        <Link href="/" className="flex min-w-0 items-center gap-2.5 lg:col-start-1 lg:row-start-1" aria-label="PROBETES INTELEGENCE CRM">
+          <Image src="/probetes-logo.png" alt="" width={34} height={34} priority className="h-8 w-8 shrink-0 rounded-md object-cover" />
+          <span className="truncate text-sm font-bold tracking-tight sm:text-base">PROBETES INTELEGENCE CRM</span>
+        </Link>
+        <div className="col-span-full row-start-2 w-full lg:col-span-1 lg:col-start-2 lg:row-start-1">
+          <GlobalSearch />
         </div>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Kontrol global">
-          {pathname === "/customers" || pathname === "/groups" ? <DateRangeFilter /> : null}
-          {pathname === "/workspace/input-kerja" ? <DateRangeFilter paramFrom="reportFrom" paramTo="reportTo" /> : null}
+        <div className="contents lg:flex lg:items-center lg:justify-self-end lg:gap-2">
           <ThemeToggle />
-          {canAccessPath(user?.role, "/import") ? (
-            <Button size="sm" asChild><Link href="/import"><Upload className="h-3.5 w-3.5" /> Upload data</Link></Button>
-          ) : null}
           {user?.role ? <UserMenu name={user.name ?? user.email ?? "User"} role={user.role} /> : null}
         </div>
       </div>
     </header>
   );
-}
-
-function formatDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`))
-    : "—";
 }
