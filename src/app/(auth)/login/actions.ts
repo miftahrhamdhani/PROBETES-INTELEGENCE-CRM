@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { safeNextPath } from "@/lib/next-path";
 import { signIn } from "@/server/auth";
@@ -13,10 +12,6 @@ export type LoginState = { error: string } | null;
  * Dipakai sebagai `<form action={...}>` — WAJIB, bukan hanya onSubmit JS: form
  * tanpa `action` fallback ke GET dan menaruh email+password di query string
  * kalau JS belum ter-hydrate.
- *
- * `redirect: false` + redirect sendiri: @auth/core hanya menghormati
- * callbackUrl absolut dan membuang path relatif (user selalu dilempar ke "/"),
- * jadi tujuan setelah login ditentukan di sini saja.
  */
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const target = safeNextPath(String(formData.get("next") ?? "/"));
@@ -29,7 +24,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
       password,
       redirectTo: target,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof AuthError) {
       return { error: `Gagal masuk (${error.type || "AuthError"}): Email atau password salah` };
     }
@@ -39,4 +34,5 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   return null;
 }
+
 
