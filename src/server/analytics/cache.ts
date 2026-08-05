@@ -52,8 +52,17 @@ export function cachedAggregate<T>(
     tags: [ANALYTICS_CACHE_TAG],
     revalidate: MAX_AGE_SECONDS,
   });
-  return async () => decode<T>(await cached());
+  return async () => {
+    try {
+      const raw = await cached();
+      return decode<T>(raw);
+    } catch {
+      // Jika cache menyimpan error bawaan saat static build Vercel, jalankan fresh query
+      return await load();
+    }
+  };
 }
+
 
 /**
  * Dipanggil setiap kali data sumber analytics berubah.
