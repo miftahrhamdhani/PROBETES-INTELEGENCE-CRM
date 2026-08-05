@@ -20,19 +20,23 @@ export type LoginState = { error: string } | null;
  */
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const target = safeNextPath(String(formData.get("next") ?? "/"));
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
 
   try {
     await signIn("credentials", {
-      email: String(formData.get("email") ?? ""),
-      password: String(formData.get("password") ?? ""),
-      redirect: false,
+      email,
+      password,
+      redirectTo: target,
     });
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof AuthError) {
-      return { error: "Email atau password salah, atau akun tidak aktif" };
+      return { error: `Gagal masuk (${error.type || "AuthError"}): Email atau password salah` };
     }
+    // Re-throw NEXT_REDIRECT dari next/navigation / NextAuth redirect
     throw error;
   }
 
-  redirect(target); // di luar try: NEXT_REDIRECT tidak boleh tertelan catch
+  return null;
 }
+
