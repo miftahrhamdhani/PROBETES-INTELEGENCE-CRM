@@ -15,14 +15,20 @@ export function parseCrmNumber(value: string | number): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function safeRupiah(value: number): number {
+  const rounded = Math.round(value);
+  if (!Number.isSafeInteger(rounded)) throw new RangeError("Total rupiah melebihi batas aman JavaScript");
+  return rounded;
+}
+
 /** Rumus existing CRM Report: jumlah qty × nilai produk, lalu ongkir + packing + admin COD - diskon. */
 export function calculateCrmReportTotals(items: CrmReportCalculationItem[], costs: CrmReportCalculationCosts) {
-  const totalProductValue = Math.round(
+  const totalProductValue = safeRupiah(
     items.reduce((total, item) => total + parseCrmNumber(item.qty) * parseCrmNumber(item.productValue), 0)
   );
   const totalPayment = Math.max(
     0,
-    Math.round(
+    safeRupiah(
       totalProductValue +
         parseCrmNumber(costs.shippingCost) +
         parseCrmNumber(costs.packingCost) +

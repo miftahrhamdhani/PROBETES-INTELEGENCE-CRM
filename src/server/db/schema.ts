@@ -565,7 +565,7 @@ export const crmReports = pgTable(
     index("crm_reports_date_idx").on(t.reportDate),
     index("crm_reports_customer_idx").on(t.customerId),
     index("crm_reports_archived_idx").on(t.archivedAt),
-    index("crm_reports_task_idx").on(t.taskId),
+    uniqueIndex("crm_reports_task_uq").on(t.taskId),
   ]
 );
 

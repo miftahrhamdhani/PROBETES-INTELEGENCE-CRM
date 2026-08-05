@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { BarChart3, Calculator, CheckCircle2, Loader2, UserRound, Package } from "lucide-react";
 import { toast } from "sonner";
 import { createCrmReportAction, updateCrmReportAction } from "@/app/crm-reports-actions";
 import { CrmReportManager } from "@/components/crm-report/crm-report-manager";
@@ -11,6 +11,7 @@ import { calculateCrmReportTotals, parseCrmNumber } from "@/lib/crm-report-calcu
 import { MAX_CRM_REPORT_ITEMS } from "@/lib/crm-report-contracts";
 import type { CrmReportDetail, CrmReportListResult, CrmReportRow } from "@/lib/crm-report-types";
 import { formatRupiah } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 interface ItemForm {
   productName: string;
@@ -332,6 +333,10 @@ export function CrmReportWorkspaceForm({
       setSuccess("Laporan berhasil disimpan.");
       toast.success("Laporan berhasil disimpan");
       setListReloadKey((key) => key + 1);
+      if (intent === "save-new" && mode === "edit") {
+        router.push("/workspace/input-kerja/baru");
+        return;
+      }
       if (intent === "save-new") {
         setForm(emptyForm());
         requestAnimationFrame(() => customerNameRef.current?.focus());
@@ -354,108 +359,149 @@ export function CrmReportWorkspaceForm({
   const busy = saving !== null;
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">Worksheet laporan closing CRM — terpisah dari order kanonik Database All.</p>
+    <div className="space-y-3 text-slate-900">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+        <div>
+          <h2 className="text-xl font-bold tracking-tight">Input Laporan CRM</h2>
+          <p className="mt-1 text-xs text-slate-500">Catat informasi penjualan CRM secara lengkap dan ringkas.</p>
+        </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={busy}>Batal</Button>
+          <span className="mr-2 text-[11px] text-slate-500">Data per {formatReportDate(form.reportDate)}</span>
+          {mode === "edit" ? <Button type="button" variant="outline" size="sm" onClick={() => router.back()} disabled={busy}>Batal</Button> : null}
           <Button type="button" variant="outline" size="sm" onClick={handleReset} disabled={busy}>Reset</Button>
           <Button type="button" variant="outline" size="sm" onClick={() => handleSave("save-new")} disabled={busy}>
             {saving === "save-new" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-            Simpan &amp; Tambah Baru
+            Simpan &amp; Baru
           </Button>
-          <Button type="button" size="sm" onClick={() => handleSave("save")} disabled={busy}>
+          <Button type="button" size="sm" className="bg-blue-600 text-white hover:bg-blue-700" onClick={() => handleSave("save")} disabled={busy}>
             {saving === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
             Simpan
           </Button>
         </div>
-      </div>
+      </header>
 
-      {error ? <p role="alert" className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{error}</p> : null}
+      {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
       {success ? (
-        <p role="status" className="flex items-center gap-1.5 border border-green-300 bg-green-50 px-3 py-2 text-xs text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+        <p role="status" className="flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
           <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> {success}
         </p>
       ) : null}
 
-      <div ref={sheetRef} className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(260px,1fr)] xl:items-start" onKeyDown={handleWorksheetEnter}>
-        <div className="overflow-x-auto border bg-card">
-          <div className="grid min-w-[1140px] grid-cols-[0.95fr_1.1fr_1fr] divide-x">
-            <SheetBlock title="Data Konsumen">
-              {customerFields.map((field) => (
-                <SheetFieldRow
-                  key={field.key}
-                  field={field}
-                  value={String(form[field.key])}
-                  inputRef={field.key === "customerName" ? customerNameRef : undefined}
-                  onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
-                />
-              ))}
-            </SheetBlock>
-
-            <SheetBlock title="Detail Produk">
-              {form.items.flatMap((item, index) => [
-                <SheetProductRow key={`product-${index}`} label={`Produk ${index + 1}`} value={item.productName} options={productNameOptions} required={index === 0} onChange={(value) => updateItem(index, { productName: upper(value) })} />,
-                <SheetProductRow key={`qty-${index}`} label={`QTY ${index + 1}`} type="number" value={item.qty} min={0} onChange={(value) => updateItem(index, { qty: value })} />,
-                <SheetProductRow key={`value-${index}`} label={`Nilai Produk ${index + 1}`} type="number" value={item.productValue} min={0} onChange={(value) => updateItem(index, { productValue: value })} />,
-              ])}
-            </SheetBlock>
-
-            <SheetBlock title="Sales dan Nilai">
-              {salesFields.map((field) => (
-                <SheetFieldRow
-                  key={field.key}
-                  field={field}
-                  value={String(form[field.key])}
-                  onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
-                />
-              ))}
-              <div className="grid min-h-9 grid-cols-[130px_22px_minmax(0,1fr)] border-b bg-primary/5 text-xs font-semibold">
-                <span className="px-2 py-2">Total Bayar</span><span className="border-x px-1 py-2 text-center">:</span><span className="px-2 py-2 text-right tabular">{money(totalPayment)}</span>
-              </div>
-            </SheetBlock>
+      <div
+        ref={sheetRef}
+        className="grid min-w-0 gap-2 xl:grid-cols-[0.95fr_1.05fr_1.12fr_0.88fr] xl:items-stretch"
+        onKeyDown={handleWorksheetEnter}
+      >
+        <FormPanel title="Data Konsumen" icon={UserRound}>
+          <div className="space-y-2 p-3">
+            {customerFields.map((field) => (
+              <CompactField
+                key={field.key}
+                field={field}
+                value={String(form[field.key])}
+                inputRef={field.key === "customerName" ? customerNameRef : undefined}
+                onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
+              />
+            ))}
           </div>
-        </div>
+        </FormPanel>
 
-        <aside className="border bg-card xl:sticky xl:top-20">
-          <h2 className="border-b px-4 py-3 text-sm font-semibold">Ringkasan Perhitungan</h2>
-          <div className="divide-y text-xs">
-            <SummaryRow label="Total Nilai Produk" value={totalProductValue} />
-            <SummaryRow label="Ongkir" value={parseCrmNumber(form.shippingCost)} />
-            <SummaryRow label="Packing" value={parseCrmNumber(form.packingCost)} />
-            <SummaryRow label="Diskon" value={parseCrmNumber(form.discount)} negative />
-            <SummaryRow label="Admin COD" value={parseCrmNumber(form.adminCod)} />
-            <div className="grid grid-cols-[1fr_auto] items-center gap-4 bg-primary/5 px-4 py-4">
-              <span className="text-sm font-bold uppercase">Total Bayar</span>
-              <span className="text-2xl font-black tabular text-primary">{money(totalPayment)}</span>
+        <FormPanel title="Detail Produk (1–5)" icon={Package}>
+          <div className="p-3">
+            <div className="grid grid-cols-[minmax(0,1fr)_66px_92px] gap-2 border-b border-slate-100 pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              <span>Produk</span><span>QTY</span><span>Nilai Produk</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {form.items.map((item, index) => (
+                <div key={index} className="grid grid-cols-[minmax(0,1fr)_66px_92px] gap-2 py-2">
+                  <ProductInput
+                    label={`Produk ${index + 1}`}
+                    value={item.productName}
+                    options={productNameOptions}
+                    required={index === 0}
+                    onChange={(value) => updateItem(index, { productName: upper(value) })}
+                  />
+                  <ProductInput label={`QTY ${index + 1}`} type="number" value={item.qty || "0"} min={0} onChange={(value) => updateItem(index, { qty: value })} />
+                  <ProductInput label={`Nilai Produk ${index + 1}`} type="number" value={item.productValue || "0"} min={0} onChange={(value) => updateItem(index, { productValue: value })} />
+                </div>
+              ))}
             </div>
           </div>
-        </aside>
+        </FormPanel>
+
+        <FormPanel title="Sales & Nilai" icon={BarChart3}>
+          <div className="space-y-1.5 p-3">
+            {salesFields.map((field) => (
+              <CompactField
+                key={field.key}
+                field={field}
+                value={String(form[field.key])}
+                onChange={(value) => updateField(field.key, (field.uppercase ? upper(value) : value) as never)}
+              />
+            ))}
+            <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] font-semibold">
+              <span>Total Bayar</span><span>{money(totalPayment)}</span>
+            </div>
+          </div>
+        </FormPanel>
+
+        <FormPanel title="Ringkasan Perhitungan" icon={Calculator}>
+          <div className="flex h-full flex-col p-3">
+            <div className="divide-y divide-slate-100 text-[11px]">
+              <SummaryRow label="Total Nilai Produk" value={totalProductValue} />
+              <SummaryRow label="Ongkir" value={parseCrmNumber(form.shippingCost)} />
+              <SummaryRow label="Packing" value={parseCrmNumber(form.packingCost)} />
+              <SummaryRow label="Diskon" value={parseCrmNumber(form.discount)} negative />
+              <SummaryRow label="Admin COD" value={parseCrmNumber(form.adminCod)} />
+            </div>
+            <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-4 border-t border-slate-200 px-1 py-4">
+              <span className="text-sm font-bold uppercase">Total</span>
+              <span className="text-2xl font-black text-blue-600">{money(totalPayment)}</span>
+            </div>
+          </div>
+        </FormPanel>
       </div>
 
-      <section className="space-y-3 border bg-card p-3">
-        <div>
-          <h2 className="text-sm font-semibold">Preview Tabel Hasil Input</h2>
-          <p className="text-[11px] text-muted-foreground">Baris pertama adalah draft realtime. Baris berikutnya adalah seluruh laporan tersimpan; klik untuk edit, menu aksi untuk archive, export memakai filter existing.</p>
+      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_30px_-28px_rgba(15,23,42,0.35)]">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <h2 className="text-sm font-semibold">Riwayat Input Laporan CRM</h2>
         </div>
-        <CrmReportManager
-          filter={{}}
-          initialData={initialList}
-          exportQuery=""
-          previewRow={previewRow}
-          reloadKey={listReloadKey}
-          hideInputAction
-        />
+        <div className="p-3">
+          <CrmReportManager
+            filter={{}}
+            initialData={initialList}
+            exportQuery=""
+            previewRow={previewRow}
+            reloadKey={listReloadKey}
+            hideInputAction
+            compactHistory
+          />
+        </div>
       </section>
     </div>
   );
 }
 
-function SheetBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section><h2 className="sticky top-0 z-10 border-b bg-muted/95 px-3 py-2 text-[11px] font-bold uppercase tracking-wide">{title}</h2>{children}</section>;
+function FormPanel({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" | "false" }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_10px_30px_-28px_rgba(15,23,42,0.4)]">
+      <h2 className="flex items-center gap-2 border-b border-slate-200 px-3 py-2.5 text-xs font-semibold">
+        <Icon className="h-4 w-4 text-blue-600" aria-hidden="true" /> {title}
+      </h2>
+      {children}
+    </section>
+  );
 }
 
-function SheetFieldRow({
+function CompactField({
   field,
   value,
   onChange,
@@ -466,25 +512,25 @@ function SheetFieldRow({
   onChange: (value: string) => void;
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
+  const inputClass = "h-8 min-w-0 rounded-md border border-slate-200 bg-white px-2.5 text-[11px] outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100";
   return (
-    <label className="grid min-h-9 grid-cols-[130px_22px_minmax(0,1fr)] border-b text-xs last:border-b-0">
-      <span className="px-2 py-2 font-medium">{field.label}{field.required ? <span className="text-destructive"> *</span> : null}</span>
-      <span className="border-x px-1 py-2 text-center text-muted-foreground">:</span>
+    <label className="grid grid-cols-[112px_minmax(0,1fr)] items-center gap-2 text-[11px]">
+      <span className="font-medium text-slate-600">{field.label}{field.required ? <span className="text-red-500"> *</span> : null}</span>
       {field.options ? (
-        <select aria-label={field.label} className="h-9 min-w-0 border-0 bg-transparent px-2 uppercase outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary" value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="">— PILIH —</option>
+        <select aria-label={field.label} className={cn(inputClass, "uppercase")} value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Pilih {field.label.toLocaleLowerCase("id-ID")}</option>
           {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : (
         <input
           ref={inputRef}
           aria-label={field.label}
-          className="h-9 min-w-0 border-0 bg-transparent px-2 outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary"
+          className={inputClass}
           type={field.type ?? "text"}
           min={field.min}
           required={field.required}
           value={value}
-          placeholder={field.placeholder}
+          placeholder={field.placeholder ?? `Masukkan ${field.label.toLocaleLowerCase("id-ID")}`}
           onChange={(event) => onChange(event.target.value)}
         />
       )}
@@ -492,7 +538,7 @@ function SheetFieldRow({
   );
 }
 
-function SheetProductRow({
+function ProductInput({
   label,
   value,
   onChange,
@@ -511,18 +557,28 @@ function SheetProductRow({
 }) {
   const listId = options ? "crm-product-options" : undefined;
   return (
-    <label className="grid min-h-9 grid-cols-[118px_22px_minmax(0,1fr)] border-b text-xs">
-      <span className="px-2 py-2 font-medium">{label}{required ? <span className="text-destructive"> *</span> : null}</span>
-      <span className="border-x px-1 py-2 text-center text-muted-foreground">:</span>
-      <span className="contents">
-        <input aria-label={label} list={listId} type={type} min={min} required={required} className="h-9 min-w-0 border-0 bg-transparent px-2 outline-none focus:bg-primary/5 focus:ring-2 focus:ring-inset focus:ring-primary" value={value} onChange={(event) => onChange(event.target.value)} />
-        {options ? <datalist id={listId}>{options.map((option) => <option key={option} value={upper(option)} />)}</datalist> : null}
-      </span>
-    </label>
+    <>
+      <input
+        aria-label={label}
+        list={listId}
+        type={type}
+        min={min}
+        required={required}
+        className="h-8 min-w-0 rounded-md border border-slate-200 bg-white px-2 text-[11px] outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+        value={value}
+        placeholder={type === "number" ? "0" : label}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {options ? <datalist id={listId}>{options.map((option) => <option key={option} value={upper(option)} />)}</datalist> : null}
+    </>
   );
 }
 
 function SummaryRow({ label, value, negative = false }: { label: string; value: number; negative?: boolean }) {
-  return <div className="grid grid-cols-[1fr_auto] gap-4 px-4 py-3"><span>{label}</span><span className={negative && value ? "tabular text-destructive" : "tabular"}>{negative && value ? "-" : ""}{money(value)}</span></div>;
+  return <div className="grid grid-cols-[1fr_auto] gap-4 px-1 py-3"><span className="text-slate-600">{label}</span><span className={negative && value ? "font-semibold text-red-600" : "font-semibold text-slate-700"}>{negative && value ? "-" : ""}{money(value)}</span></div>;
+}
+
+function formatReportDate(value: string): string {
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
 }
 

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { CRM_TASK_TYPES, CRM_TASK_TYPE_LABELS, type CrmTaskType } from "@/lib/workspace-contracts";
+import { MANUAL_CRM_TASK_TYPES, CRM_TASK_TYPE_LABELS, type ManualCrmTaskType } from "@/lib/workspace-contracts";
 
 type CustomerOption = { id: number; name: string; phone: string };
 
@@ -26,7 +26,7 @@ export function AddTaskDialog({ open, onOpenChange, onCreated }: { open: boolean
   const [options, setOptions] = React.useState<CustomerOption[]>([]);
   const [searching, setSearching] = React.useState(false);
   const [selected, setSelected] = React.useState<CustomerOption | null>(null);
-  const [taskType, setTaskType] = React.useState<CrmTaskType>("BROADCAST");
+  const [taskType, setTaskType] = React.useState<ManualCrmTaskType>("BROADCAST");
   const [dueAt, setDueAt] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -152,9 +152,9 @@ export function AddTaskDialog({ open, onOpenChange, onCreated }: { open: boolean
               <select
                 className="h-9 w-full rounded-md border bg-card px-3 text-xs outline-none focus:ring-2 focus:ring-ring"
                 value={taskType}
-                onChange={(e) => setTaskType(e.target.value as CrmTaskType)}
+                onChange={(e) => setTaskType(e.target.value as ManualCrmTaskType)}
               >
-                {CRM_TASK_TYPES.filter((t) => t !== "FOLLOW_UP_NEW_CUSTOMER").map((t) => (
+                {MANUAL_CRM_TASK_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {CRM_TASK_TYPE_LABELS[t]}
                   </option>

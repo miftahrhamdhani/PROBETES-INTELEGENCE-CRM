@@ -2,9 +2,14 @@ import { z } from "zod";
 
 export const MAX_CRM_REPORT_ITEMS = 5;
 
-const moneyField = z.union([z.number(), z.string()]).transform((v) => {
-  const n = typeof v === "string" ? Number(v.replace(/[^\d.-]/g, "") || 0) : v;
-  return Math.max(0, Math.round(Number.isFinite(n) ? n : 0));
+const moneyField = z.union([z.number(), z.string()]).transform((v, ctx) => {
+  const raw = typeof v === "string" ? v.replace(/[^\d.-]/g, "") || "0" : v;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Nilai rupiah harus bilangan bulat aman non-negatif" });
+    return z.NEVER;
+  }
+  return n;
 });
 
 const uppercaseText = (max: number) =>

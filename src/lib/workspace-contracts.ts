@@ -21,6 +21,9 @@ export const CRM_TASK_TYPE_LABELS: Record<CrmTaskType, string> = {
   OTHER: "Lainnya",
 };
 
+export const MANUAL_CRM_TASK_TYPES = ["FOLLOW_UP_REPEAT", "BROADCAST", "INVITE_GROUP", "OTHER"] as const;
+export type ManualCrmTaskType = (typeof MANUAL_CRM_TASK_TYPES)[number];
+
 export const CRM_TASK_STATUSES = ["UNASSIGNED", "ASSIGNED", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
 export type CrmTaskStatus = (typeof CRM_TASK_STATUSES)[number];
 
@@ -74,11 +77,8 @@ export function canTransitionStatus(from: CrmTaskStatus, to: CrmTaskStatus): boo
   return MANUAL_STATUS_TRANSITIONS[from].includes(to);
 }
 
-/** Status yang boleh dipakai di "Bulk Status" — DONE sengaja dikecualikan karena
- *  wajib melalui completeTask (butuh outcome), tidak lewat aksi massal generik.
- *  UNASSIGNED disertakan supaya task yang salah dibatalkan bisa dipulihkan
- *  beramai-ramai (canTransitionStatus sudah mengizinkan CANCELLED -> UNASSIGNED),
- *  bukan cuma satu-satu lewat "Aktifkan Kembali" di detail sheet. */
+/** Status yang boleh dipakai di "Bulk Status". DONE wajib lewat completeTask;
+ *  ASSIGNED wajib lewat assign agar task selalu punya PIC valid. */
 export const BULK_STATUS_TARGETS = ["UNASSIGNED", "ASSIGNED", "IN_PROGRESS", "CANCELLED"] as const;
 
 export const assignTaskSchema = z.object({
@@ -144,7 +144,7 @@ export type SetDueDateBody = z.infer<typeof setDueDateSchema>;
 
 export const createTaskSchema = z.object({
   customerId: z.number().int().positive(),
-  taskType: z.enum(CRM_TASK_TYPES),
+  taskType: z.enum(MANUAL_CRM_TASK_TYPES),
   dueAt: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -159,7 +159,7 @@ export type CreateTaskBody = z.infer<typeof createTaskSchema>;
  *  semuanya. Dipakai createManualTasksBulkAction. */
 export const createTasksBulkSchema = z.object({
   customerIds: z.array(z.number().int().positive()).min(1).max(200),
-  taskType: z.enum(CRM_TASK_TYPES),
+  taskType: z.enum(MANUAL_CRM_TASK_TYPES),
   dueAt: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

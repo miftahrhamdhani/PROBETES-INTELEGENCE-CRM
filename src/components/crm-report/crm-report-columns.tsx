@@ -1,7 +1,7 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Archive, ArchiveRestore, Eye, MoreHorizontal } from "lucide-react";
+import { Archive, ArchiveRestore, Eye, MoreHorizontal, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -15,7 +15,8 @@ import type { CrmReportRow } from "@/lib/crm-report-types";
  *  cepat) tidak menampilkannya karena kebanyakan laporan belum tertaut task. */
 export function buildCrmReportColumns(
   onArchiveToggle: (row: CrmReportRow) => void,
-  showTaskColumns = false
+  showTaskColumns = false,
+  compactHistory = false
 ): ColumnDef<CrmReportRow, any>[] {
   const taskColumns: ColumnDef<CrmReportRow, any>[] = showTaskColumns
     ? [
@@ -60,6 +61,99 @@ export function buildCrmReportColumns(
         },
       ]
     : [];
+
+  if (compactHistory) {
+    return [
+      {
+        id: "reportDate",
+        header: "Tanggal",
+        size: 110,
+        cell: ({ row }) => <span>{formatDate(row.original.reportDate)}</span>,
+      },
+      {
+        id: "customerName",
+        header: "Nama Konsumen",
+        size: 175,
+        cell: ({ row }) => <span className="font-medium text-slate-700">{row.original.customerName}</span>,
+      },
+      {
+        id: "phone",
+        header: "No HP",
+        size: 135,
+        cell: ({ row }) => <span>{row.original.phone}</span>,
+      },
+      {
+        id: "csName",
+        header: "Nama CS",
+        size: 130,
+        cell: ({ row }) => <span>{row.original.csName ?? "—"}</span>,
+      },
+      {
+        id: "totalProductValue",
+        header: "Total Nilai Produk",
+        size: 155,
+        cell: ({ row }) => <span>{formatRupiah(row.original.totalProductValue)}</span>,
+      },
+      {
+        id: "shippingCost",
+        header: "Ongkir",
+        size: 110,
+        cell: ({ row }) => <span>{formatRupiah(row.original.shippingCost)}</span>,
+      },
+      {
+        id: "packingCost",
+        header: "Packing",
+        size: 110,
+        cell: ({ row }) => <span>{formatRupiah(row.original.packingCost)}</span>,
+      },
+      {
+        id: "discount",
+        header: "Diskon",
+        size: 110,
+        cell: ({ row }) => <span>{formatRupiah(row.original.discount)}</span>,
+      },
+      {
+        id: "adminCod",
+        header: "Admin COD",
+        size: 115,
+        cell: ({ row }) => <span>{formatRupiah(row.original.adminCod)}</span>,
+      },
+      {
+        id: "totalPayment",
+        header: "Total Bayar",
+        size: 140,
+        cell: ({ row }) => <span className="font-semibold text-slate-800">{formatRupiah(row.original.totalPayment)}</span>,
+      },
+      {
+        id: "actions",
+        header: "Aksi",
+        size: 72,
+        enableResizing: false,
+        cell: ({ row }) =>
+          row.original.id <= 0 ? (
+            <Eye className="h-3.5 w-3.5 text-blue-600" aria-label="Draft realtime" />
+          ) : (
+            <div className="flex items-center gap-1">
+              <Button size="icon" variant="ghost" className="h-7 w-7 text-blue-600" aria-label="Edit laporan">
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-red-500"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onArchiveToggle(row.original);
+                }}
+                aria-label="Arsipkan laporan"
+              >
+                <Archive className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ),
+      },
+    ];
+  }
 
   return [
     {

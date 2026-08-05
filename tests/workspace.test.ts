@@ -17,6 +17,7 @@ import {
   canTransitionStatus,
   completeTaskSchema,
   createTaskSchema,
+  createTasksBulkSchema,
   type CrmTaskStatus,
 } from "@/lib/workspace-contracts";
 
@@ -44,10 +45,11 @@ describe("Workspace — deteksi customer baru (schema)", () => {
     expect(fk?.foreignTable).toBeDefined();
   });
 
-  it("crm_reports.task_id ada sebagai provenance opsional (laporan tetap berdiri sendiri kalau null)", () => {
+  it("crm_reports.task_id opsional tetapi unik: satu task maksimal satu laporan", () => {
     const column = getTableConfig(crmReports).columns.find((c) => c.name === "task_id");
     expect(column).toBeDefined();
     expect(column?.notNull).toBe(false);
+    expect(hasUniqueIndexOn(crmReports, ["task_id"])).toBe(true);
   });
 });
 
@@ -87,9 +89,10 @@ describe("Workspace — aturan transisi status (canTransitionStatus)", () => {
 });
 
 describe("Workspace — validasi Zod", () => {
-  it("bulkStatusSchema menolak DONE sebagai target (DONE wajib lewat completeTask, butuh outcome)", () => {
+  it("bulkStatusSchema menolak DONE; service menjaga ASSIGNED hanya untuk task yang sudah punya PIC", () => {
     expect(BULK_STATUS_TARGETS).not.toContain("DONE");
     expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "DONE" }).success).toBe(false);
+    expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "ASSIGNED" }).success).toBe(true);
     expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "IN_PROGRESS" }).success).toBe(true);
   });
 
@@ -103,8 +106,10 @@ describe("Workspace — validasi Zod", () => {
     expect(assignTaskSchema.safeParse({ assignedTo: 5, dueAt: "2026-08-01" }).success).toBe(true);
   });
 
-  it("createTaskSchema menerima jenis tugas manual (repeat/broadcast/invite/other)", () => {
+  it("schema task manual menolak FOLLOW_UP_NEW_CUSTOMER yang hanya boleh dibuat import", () => {
     expect(createTaskSchema.safeParse({ customerId: 1, taskType: "FOLLOW_UP_REPEAT" }).success).toBe(true);
+    expect(createTaskSchema.safeParse({ customerId: 1, taskType: "FOLLOW_UP_NEW_CUSTOMER" }).success).toBe(false);
+    expect(createTasksBulkSchema.safeParse({ customerIds: [1], taskType: "FOLLOW_UP_NEW_CUSTOMER" }).success).toBe(false);
     expect(createTaskSchema.safeParse({ customerId: 1, taskType: "INVALID" }).success).toBe(false);
   });
 });

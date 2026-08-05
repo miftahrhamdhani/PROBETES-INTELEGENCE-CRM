@@ -44,24 +44,41 @@ export function TaskDetailSheet({ picOptions, onChanged }: { picOptions: CrmUser
 
   const [detail, setDetail] = React.useState<WorkspaceTaskDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const requestIdRef = React.useRef(0);
 
-  const fetchDetail = React.useCallback((id: number) => {
+  const fetchDetail = React.useCallback(async (id: number) => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
-    return loadWorkspaceTaskDetail(id).then((result) => {
+    setLoadError(null);
+    try {
+      const result = await loadWorkspaceTaskDetail(id);
+      if (requestId !== requestIdRef.current) return result;
       setDetail(result);
-      setLoading(false);
+      if (!result) setLoadError("Task tidak ditemukan");
       return result;
-    });
+    } catch (error) {
+      if (requestId === requestIdRef.current) {
+        setDetail(null);
+        setLoadError(error instanceof Error ? error.message : "Gagal memuat detail task");
+      }
+      return null;
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
   }, []);
 
   React.useEffect(() => {
     if (!taskId) {
+      requestIdRef.current += 1;
       setDetail(null);
+      setLoadError(null);
+      setLoading(false);
       return;
     }
-    fetchDetail(taskId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId]);
+    setDetail(null);
+    void fetchDetail(taskId);
+  }, [taskId, fetchDetail]);
 
   function close() {
     const params = new URLSearchParams(searchParams.toString());
@@ -79,11 +96,13 @@ export function TaskDetailSheet({ picOptions, onChanged }: { picOptions: CrmUser
   return (
     <Sheet open={!!taskId} onOpenChange={(next) => !next && close()}>
       <SheetContent>
-        {loading || !detail ? (
+        {loading ? (
           <DetailSkeleton />
-        ) : (
+        ) : loadError ? (
+          <div className="p-5 text-sm text-destructive">{loadError}</div>
+        ) : detail ? (
           <TaskDetailBody detail={detail} picOptions={picOptions} onChanged={refresh} />
-        )}
+        ) : null}
       </SheetContent>
     </Sheet>
   );

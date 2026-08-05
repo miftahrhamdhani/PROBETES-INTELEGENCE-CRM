@@ -16,6 +16,7 @@ import type {
 
 export class TaskNotFoundError extends Error {}
 export class InvalidTransitionError extends Error {}
+export class InvalidAssigneeError extends Error {}
 
 const DEFAULT_PER_PAGE = 60;
 const MAX_PER_PAGE = 200;
@@ -271,6 +272,16 @@ async function insertHistory(
   );
 }
 
+async function requireAssignableUser(client: TransactionClient, userId: number): Promise<string> {
+  const result = await client.query<{ name: string }>(
+    "SELECT name FROM users WHERE id = $1 AND active = true AND role IN ('ADMIN', 'CRM')",
+    [userId]
+  );
+  const row = result.rows[0];
+  if (!row) throw new InvalidAssigneeError("PIC harus user ADMIN/CRM aktif");
+  return row.name;
+}
+
 /** Assign satu task — kalau statusnya masih UNASSIGNED otomatis naik ke
  *  ASSIGNED; kalau sudah ASSIGNED/IN_PROGRESS ini murni re-assign PIC (status
  *  tidak berubah). DONE/CANCELLED tidak bisa di-assign ulang. */
@@ -280,8 +291,8 @@ export async function assignTask(
   actorUserId: number
 ): Promise<void> {
   await withTransaction(async (client) => {
-    const current = await client.query<{ status: CrmTaskStatus }>(
-      "SELECT status FROM crm_tasks WHERE id = $1 FOR UPDATE",
+    const current = await client.query<{ status: CrmTaskStatus; assigned_to: number | null; due_at: string | null }>(
+      "SELECT status, assigned_to, due_at::text AS due_at FROM crm_tasks WHERE id = $1 FOR UPDATE",
       [taskId]
     );
     const row = current.rows[0];
@@ -289,7 +300,10 @@ export async function assignTask(
     if (row.status === "DONE" || row.status === "CANCELLED") {
       throw new InvalidTransitionError(`Task berstatus ${row.status} tidak bisa di-assign`);
     }
+    const assigneeName = await requireAssignableUser(client, input.assignedTo);
     const nextStatus: CrmTaskStatus = row.status === "UNASSIGNED" ? "ASSIGNED" : row.status;
+    const nextDueAt = input.dueAt ?? row.due_at;
+    if (row.assigned_to === input.assignedTo && row.status === nextStatus && row.due_at === nextDueAt) return;
 
     await client.query(
       `UPDATE crm_tasks SET
@@ -299,26 +313,39 @@ export async function assignTask(
       [taskId, input.assignedTo, actorUserId, nextStatus, input.dueAt ?? null]
     );
 
-    if (nextStatus !== row.status) {
-      await insertHistory(client, taskId, row.status, nextStatus, actorUserId, "Assigned");
-    }
+    const changes = [
+      row.assigned_to !== input.assignedTo ? `PIC ${row.assigned_to ?? "—"} → ${input.assignedTo} (${assigneeName})` : null,
+      row.due_at !== nextDueAt ? `Due date ${row.due_at ?? "—"} → ${nextDueAt ?? "—"}` : null,
+    ].filter(Boolean);
+    await insertHistory(client, taskId, row.status, nextStatus, actorUserId, changes.join("; ") || "Assigned");
   });
 }
 
-/** Bulk assign — set-based (satu UPDATE + satu bulk history insert), bukan
- *  loop per-row, supaya aman dipakai untuk ratusan task sekaligus. */
+/** Bulk assign — satu UPDATE set-based; history dicatat per task agar PIC/due-date
+ *  lama dan baru tetap terbaca pada audit trail. */
 export async function bulkAssignTasks(
   taskIds: number[],
   input: { assignedTo: number; dueAt?: string | null },
   actorUserId: number
 ): Promise<{ updated: number; skipped: number }> {
   return withTransaction(async (client) => {
-    const before = await client.query<{ id: number; status: CrmTaskStatus }>(
-      "SELECT id, status FROM crm_tasks WHERE id = ANY($1::bigint[])",
+    const assigneeName = await requireAssignableUser(client, input.assignedTo);
+    const before = await client.query<{
+      id: number;
+      status: CrmTaskStatus;
+      assigned_to: number | null;
+      due_at: string | null;
+    }>(
+      "SELECT id, status, assigned_to, due_at::text AS due_at FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
       [taskIds]
     );
-    const eligible = before.rows.filter((r) => r.status !== "DONE" && r.status !== "CANCELLED");
-    if (eligible.length === 0) return { updated: 0, skipped: before.rows.length };
+    const eligible = before.rows.filter(
+      (r) =>
+        r.status !== "DONE" &&
+        r.status !== "CANCELLED" &&
+        (r.assigned_to !== input.assignedTo || r.status === "UNASSIGNED" || (input.dueAt != null && r.due_at !== input.dueAt))
+    );
+    if (eligible.length === 0) return { updated: 0, skipped: taskIds.length };
 
     const eligibleIds = eligible.map((r) => r.id);
     await client.query(
@@ -330,17 +357,19 @@ export async function bulkAssignTasks(
       [eligibleIds, input.assignedTo, actorUserId, input.dueAt ?? null]
     );
 
-    const toAssign = eligible.filter((r) => r.status === "UNASSIGNED");
-    if (toAssign.length) {
-      await client.query(
-        `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
-         SELECT id, 'UNASSIGNED'::crm_task_status, 'ASSIGNED'::crm_task_status, 'Bulk assign', $2
-         FROM unnest($1::bigint[]) AS t(id)`,
-        [toAssign.map((r) => r.id), actorUserId]
-      );
+    for (const row of eligible) {
+      const nextStatus = row.status === "UNASSIGNED" ? "ASSIGNED" : row.status;
+      const nextDueAt = input.dueAt ?? row.due_at;
+      const changes = [
+        row.assigned_to !== input.assignedTo
+          ? `PIC ${row.assigned_to ?? "—"} → ${input.assignedTo} (${assigneeName})`
+          : null,
+        row.due_at !== nextDueAt ? `Due date ${row.due_at ?? "—"} → ${nextDueAt ?? "—"}` : null,
+      ].filter(Boolean);
+      await insertHistory(client, row.id, row.status, nextStatus, actorUserId, `Bulk assign: ${changes.join("; ")}`);
     }
 
-    return { updated: eligible.length, skipped: before.rows.length - eligible.length };
+    return { updated: eligible.length, skipped: taskIds.length - eligible.length };
   });
 }
 
@@ -353,47 +382,72 @@ export async function setTaskStatus(
   note?: string | null
 ): Promise<void> {
   await withTransaction(async (client) => {
-    const current = await client.query<{ status: CrmTaskStatus }>(
-      "SELECT status FROM crm_tasks WHERE id = $1 FOR UPDATE",
+    const current = await client.query<{ status: CrmTaskStatus; assigned_to: number | null }>(
+      "SELECT status, assigned_to FROM crm_tasks WHERE id = $1 FOR UPDATE",
       [taskId]
     );
     const row = current.rows[0];
     if (!row) throw new TaskNotFoundError();
+    if (status === "ASSIGNED" && row.assigned_to == null) {
+      throw new InvalidTransitionError("Status ASSIGNED memerlukan PIC valid");
+    }
+    if (status === "IN_PROGRESS" && row.assigned_to == null) {
+      throw new InvalidTransitionError("Status IN_PROGRESS memerlukan PIC valid");
+    }
     if (!canTransitionStatus(row.status, status)) {
       throw new InvalidTransitionError(`Tidak bisa pindah dari ${row.status} ke ${status}`);
     }
     if (row.status === status) return;
 
-    await client.query("UPDATE crm_tasks SET status = $2, updated_at = now() WHERE id = $1", [taskId, status]);
+    await client.query(
+      `UPDATE crm_tasks SET
+         status = $2,
+         assigned_to = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_to END,
+         assigned_by = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_by END,
+         assigned_at = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_at END,
+         updated_at = now()
+       WHERE id = $1`,
+      [taskId, status]
+    );
     await insertHistory(client, taskId, row.status, status, actorUserId, note);
   });
 }
 
-/** Bulk status — hanya target ASSIGNED/IN_PROGRESS/CANCELLED (DONE wajib lewat
- *  completeTask). Validasi per-row pakai canTransitionStatus di TS, lalu satu
- *  UPDATE set-based untuk subset yang valid + satu bulk history insert. */
+/** Bulk status — DONE wajib lewat completeTask. Row dikunci sebelum validasi
+ *  supaya completion concurrent tidak tertimpa; ASSIGNED hanya valid untuk task
+ *  yang sudah punya PIC. */
 export async function bulkSetTaskStatus(
   taskIds: number[],
   status: Exclude<CrmTaskStatus, "DONE">,
   actorUserId: number
 ): Promise<{ updated: number; skipped: number }> {
   return withTransaction(async (client) => {
-    const before = await client.query<{ id: number; status: CrmTaskStatus }>(
-      "SELECT id, status FROM crm_tasks WHERE id = ANY($1::bigint[])",
+    const before = await client.query<{ id: number; status: CrmTaskStatus; assigned_to: number | null }>(
+      "SELECT id, status, assigned_to FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
       [taskIds]
     );
-    const eligible = before.rows.filter((r) => r.status !== status && canTransitionStatus(r.status, status));
-    if (eligible.length === 0) return { updated: 0, skipped: before.rows.length };
+    const eligible = before.rows.filter(
+      (r) =>
+        r.status !== status &&
+        canTransitionStatus(r.status, status) &&
+        ((status !== "ASSIGNED" && status !== "IN_PROGRESS") || r.assigned_to != null)
+    );
+    if (eligible.length === 0) return { updated: 0, skipped: taskIds.length };
 
     const eligibleIds = eligible.map((r) => r.id);
     const fromStatuses = eligible.map((r) => r.status);
+    const clearAssignment = status === "UNASSIGNED";
 
-    await client.query("UPDATE crm_tasks SET status = $2, updated_at = now() WHERE id = ANY($1::bigint[])", [
-      eligibleIds,
-      status,
-    ]);
-    // Snapshot `before` (bukan re-select setelah UPDATE) dipakai untuk from_status
-    // supaya benar walau baris sudah berubah — array id & status sejajar (unnest 2 array).
+    await client.query(
+      `UPDATE crm_tasks SET
+         status = $2,
+         assigned_to = CASE WHEN $3 THEN NULL ELSE assigned_to END,
+         assigned_by = CASE WHEN $3 THEN NULL ELSE assigned_by END,
+         assigned_at = CASE WHEN $3 THEN NULL ELSE assigned_at END,
+         updated_at = now()
+       WHERE id = ANY($1::bigint[])`,
+      [eligibleIds, status, clearAssignment]
+    );
     await client.query(
       `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
        SELECT id, from_status, $3::crm_task_status, 'Bulk status', $4
@@ -401,7 +455,7 @@ export async function bulkSetTaskStatus(
       [eligibleIds, fromStatuses, status, actorUserId]
     );
 
-    return { updated: eligible.length, skipped: before.rows.length - eligible.length };
+    return { updated: eligible.length, skipped: taskIds.length - eligible.length };
   });
 }
 
@@ -414,14 +468,26 @@ export async function completeTask(
   actorUserId: number
 ): Promise<void> {
   await withTransaction(async (client) => {
-    const current = await client.query<{ status: CrmTaskStatus }>(
-      "SELECT status FROM crm_tasks WHERE id = $1 FOR UPDATE",
+    const current = await client.query<{ status: CrmTaskStatus; customer_id: number }>(
+      "SELECT status, customer_id FROM crm_tasks WHERE id = $1 FOR UPDATE",
       [taskId]
     );
     const row = current.rows[0];
     if (!row) throw new TaskNotFoundError();
     if (row.status !== "ASSIGNED" && row.status !== "IN_PROGRESS") {
       throw new InvalidTransitionError(`Task berstatus ${row.status} tidak bisa diselesaikan`);
+    }
+
+    if (input.linkedReportId) {
+      const linked = await client.query<{ id: number }>(
+        `UPDATE crm_reports SET task_id = $2, updated_at = now()
+         WHERE id = $1 AND customer_id = $3 AND archived_at IS NULL AND task_id IS NULL
+         RETURNING id`,
+        [input.linkedReportId, taskId, row.customer_id]
+      );
+      if (!linked.rows[0]) {
+        throw new InvalidTransitionError("Laporan tidak valid, sudah diarsipkan, berbeda customer, atau sudah tertaut task lain");
+      }
     }
 
     await client.query(
@@ -432,13 +498,6 @@ export async function completeTask(
       [taskId, input.outcome, input.notes ?? null, actorUserId]
     );
     await insertHistory(client, taskId, row.status, "DONE", actorUserId, `Outcome: ${input.outcome}`);
-
-    if (input.linkedReportId) {
-      await client.query(
-        "UPDATE crm_reports SET task_id = $2, updated_at = now() WHERE id = $1 AND task_id IS NULL",
-        [input.linkedReportId, taskId]
-      );
-    }
   });
 }
 
@@ -447,26 +506,36 @@ export async function cancelTask(taskId: number, actorUserId: number, note?: str
 }
 
 export async function setTaskDueDate(taskId: number, dueAt: string | null, actorUserId: number): Promise<void> {
-  const result = await getDb().execute(sql`
-    UPDATE crm_tasks SET due_at = ${dueAt}::date, updated_at = now() WHERE id = ${taskId} RETURNING id
-  `);
-  if (!result.rows[0]) throw new TaskNotFoundError();
-  void actorUserId;
+  await withTransaction(async (client) => {
+    const current = await client.query<{ status: CrmTaskStatus; due_at: string | null }>(
+      "SELECT status, due_at::text AS due_at FROM crm_tasks WHERE id = $1 FOR UPDATE",
+      [taskId]
+    );
+    const row = current.rows[0];
+    if (!row) throw new TaskNotFoundError();
+    if (row.due_at === dueAt) return;
+
+    await client.query("UPDATE crm_tasks SET due_at = $2::date, updated_at = now() WHERE id = $1", [taskId, dueAt]);
+    await insertHistory(client, taskId, row.status, row.status, actorUserId, `Due date ${row.due_at ?? "—"} → ${dueAt ?? "—"}`);
+  });
 }
 
 export async function createManualTask(
   input: { customerId: number; taskType: string; dueAt?: string | null; notes?: string | null },
   actorUserId: number
 ): Promise<{ id: number }> {
-  const result = await getDb().execute<{ id: number }>(sql`
-    INSERT INTO crm_tasks (customer_id, task_type, status, due_at, notes, created_at, updated_at)
-    VALUES (${input.customerId}, ${input.taskType}, 'UNASSIGNED', ${input.dueAt ?? null}::date, ${input.notes ?? null}, now(), now())
-    RETURNING id
-  `);
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error("Gagal membuat task");
-  void actorUserId;
-  return { id };
+  return withTransaction(async (client) => {
+    const result = await client.query<{ id: number }>(
+      `INSERT INTO crm_tasks (customer_id, task_type, status, due_at, notes, created_at, updated_at)
+       VALUES ($1, $2, 'UNASSIGNED', $3::date, $4, now(), now())
+       RETURNING id`,
+      [input.customerId, input.taskType, input.dueAt ?? null, input.notes ?? null]
+    );
+    const id = result.rows[0]?.id;
+    if (!id) throw new Error("Gagal membuat task");
+    await insertHistory(client, id, null, "UNASSIGNED", actorUserId, `Task manual dibuat: ${input.taskType}`);
+    return { id };
+  });
 }
 
 /**
@@ -492,7 +561,13 @@ export async function createManualTasksBulk(
        RETURNING id`,
       [input.customerIds, input.taskType, input.dueAt ?? null, input.notes ?? null]
     );
-    void actorUserId;
+    if (result.rows.length) {
+      await client.query(
+        `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
+         SELECT id, NULL, 'UNASSIGNED', $2, $3 FROM unnest($1::bigint[]) AS t(id)`,
+        [result.rows.map((row) => row.id), `Task manual dibuat: ${input.taskType}`, actorUserId]
+      );
+    }
     return { created: result.rows.length };
   });
 }
@@ -510,15 +585,18 @@ export async function confirmJoinedGroupFromTask(
   actorUserId: number
 ): Promise<{ clusterCode: string | null }> {
   return withTransaction(async (client) => {
-    const task = await client.query<{ customer_id: number; outcome: string | null }>(
-      "SELECT customer_id, outcome FROM crm_tasks WHERE id = $1",
+    const task = await client.query<{ customer_id: number; status: CrmTaskStatus; outcome: string | null }>(
+      "SELECT customer_id, status, outcome FROM crm_tasks WHERE id = $1 FOR UPDATE",
       [taskId]
     );
     const row = task.rows[0];
     if (!row) throw new TaskNotFoundError();
+    if (row.status !== "DONE" || row.outcome !== "JOINED_GROUP") {
+      throw new InvalidTransitionError("Konfirmasi group hanya untuk task DONE dengan outcome JOINED_GROUP");
+    }
 
     const existing = await client.query<{ status: string }>(
-      "SELECT status FROM customer_group_memberships WHERE customer_id = $1",
+      "SELECT status FROM customer_group_memberships WHERE customer_id = $1 FOR UPDATE",
       [row.customer_id]
     );
     const oldStatus = existing.rows[0]?.status ?? null;

@@ -420,10 +420,10 @@ membuat "customer hantu" hanya untuk diberi label exclude, yang lebih buruk dari
 saat ini. Kalau suatu saat FR-03/ERD ingin dikoreksi redaksinya, itu perubahan dokumentasi,
 bukan perubahan perilaku.
 
-**"Workspace CRM" / auto-task-generation** yang disebut dalam permintaan koreksi — belum
-ada implementasinya di codebase ini (bukan fitur yang sudah dibangun). Tidak ada perubahan
-diperlukan; kalau/ketika fitur itu dibangun, source-of-truth populasi-nya tinggal reuse
-`buildConditions`/`rebuildRfm` yang sudah memuat guard ini.
+**"Workspace CRM" / auto-task-generation** sudah diimplementasikan. Auto-task customer
+baru dibuat dari customer canonical hasil import, sesudah guard parser dan `rebuildRfm`;
+baris invalid/phone kosong tetap tidak dapat menghasilkan task. Unique index partial
+`crm_tasks_new_customer_uq` menjaga satu `FOLLOW_UP_NEW_CUSTOMER` per customer.
 
 ---
 

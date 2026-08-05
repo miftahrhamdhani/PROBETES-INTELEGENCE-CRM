@@ -42,9 +42,9 @@ import { cn } from "@/lib/utils";
 import {
   CRM_TASK_OUTCOME_LABELS,
   CRM_TASK_STATUS_LABELS,
-  CRM_TASK_TYPES,
+  MANUAL_CRM_TASK_TYPES,
   CRM_TASK_TYPE_LABELS,
-  type CrmTaskType,
+  type ManualCrmTaskType,
 } from "@/lib/workspace-contracts";
 import type { CustomerTaskHistoryRow } from "@/lib/workspace-types";
 
@@ -633,7 +633,7 @@ function CrmTaskHistorySection({
   onCreated: () => void;
 }) {
   const [formOpen, setFormOpen] = React.useState(false);
-  const [taskType, setTaskType] = React.useState<CrmTaskType>("FOLLOW_UP_REPEAT");
+  const [taskType, setTaskType] = React.useState<ManualCrmTaskType>("FOLLOW_UP_REPEAT");
   const [dueAt, setDueAt] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -673,9 +673,9 @@ function CrmTaskHistorySection({
               <select
                 className="h-9 w-full rounded-md border bg-card px-3 text-xs outline-none focus:ring-2 focus:ring-ring"
                 value={taskType}
-                onChange={(e) => setTaskType(e.target.value as CrmTaskType)}
+                onChange={(e) => setTaskType(e.target.value as ManualCrmTaskType)}
               >
-                {CRM_TASK_TYPES.filter((t) => t !== "FOLLOW_UP_NEW_CUSTOMER").map((t) => (
+                {MANUAL_CRM_TASK_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {CRM_TASK_TYPE_LABELS[t]}
                   </option>

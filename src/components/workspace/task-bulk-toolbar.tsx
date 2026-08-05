@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +36,8 @@ export function TaskBulkToolbar({
     setApplying(true);
     try {
       await onBulkStatus(status);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Gagal memperbarui status task");
     } finally {
       setApplying(false);
     }

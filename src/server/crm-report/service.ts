@@ -1,6 +1,8 @@
 import { eq, sql, type SQL } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/neon-serverless";
 import { getDb } from "@/server/db/client";
 import { crmReportItems, crmReports, customers, products } from "@/server/db/schema";
+import { withTransaction, type TransactionClient } from "@/server/db/transaction";
 import { normalizePhone } from "@/server/normalize/phone";
 import type { CrmReportBody, CrmReportListFilter } from "@/lib/crm-report-contracts";
 import { calculateCrmReportTotals } from "@/lib/crm-report-calculation";
@@ -13,16 +15,22 @@ const MAX_PER_PAGE = 200;
 
 /** Best-effort match ke customer Database All by normalized phone — laporan
  *  tetap tersimpan walau nomor belum/tidak pernah ada di Database All. */
-async function resolveCustomer(phone: string): Promise<{ customerId: number | null; normalizedPhone: string | null }> {
+async function resolveCustomer(
+  db: ReturnType<typeof drizzle>,
+  phone: string
+): Promise<{ customerId: number | null; normalizedPhone: string | null }> {
   const normalized = normalizePhone(phone);
   if (normalized.status !== "VALID") return { customerId: null, normalizedPhone: null };
-  const db = getDb();
   const [row] = await db
     .select({ id: customers.id })
     .from(customers)
     .where(eq(customers.normalizedPhone, normalized.normalized))
     .limit(1);
   return { customerId: row?.id ?? null, normalizedPhone: normalized.normalized };
+}
+
+function transactionDb(client: TransactionClient) {
+  return drizzle(client);
 }
 
 function toItemValues(reportId: number, items: CrmReportBody["items"]) {
@@ -48,96 +56,100 @@ function calculatedTotalPayment(input: CrmReportBody): bigint {
 }
 
 export async function createReport(input: CrmReportBody, userId: number): Promise<number> {
-  const { customerId, normalizedPhone } = await resolveCustomer(input.phone);
-  const db = getDb();
-  const [row] = await db
-    .insert(crmReports)
-    .values({
-      customerId,
-      customerName: input.customerName,
-      phone: input.phone,
-      normalizedPhone,
-      address: input.address ?? null,
-      expedition: input.expedition ?? null,
-      memo: input.memo ?? null,
-      paymentMethod: input.paymentMethod ?? null,
-      shippingCost: BigInt(input.shippingCost ?? 0),
-      packingCost: BigInt(input.packingCost ?? 0),
-      discount: BigInt(input.discount ?? 0),
-      adminCod: BigInt(input.adminCod ?? 0),
-      totalPayment: calculatedTotalPayment(input),
-      csName: input.csName ?? null,
-      advName: input.advName ?? null,
-      note: input.note ?? null,
-      hub: input.hub ?? null,
-      city: input.city ?? null,
-      reportDate: input.reportDate,
-      orderClosingCount: input.orderClosingCount != null ? Number(input.orderClosingCount) : null,
-      salesType: input.salesType ?? null,
-      platform: input.platform ?? null,
-      division: input.division ?? null,
-      dataReceivedCount: input.dataReceivedCount != null ? Number(input.dataReceivedCount) : null,
-      crmVoucher: input.crmVoucher ?? null,
-      codValue: BigInt(input.codValue ?? 0),
-      recipientDistrict: input.recipientDistrict ?? null,
-      recipientPostalCode: input.recipientPostalCode ?? null,
-      partner: input.partner ?? null,
-      crmMarketingCost: BigInt(input.crmMarketingCost ?? 0),
-      createdBy: userId,
-      updatedBy: userId,
-    })
-    .returning({ id: crmReports.id });
-  if (!row) throw new Error("Gagal membuat CRM Report");
+  return withTransaction(async (client) => {
+    const db = transactionDb(client);
+    const { customerId, normalizedPhone } = await resolveCustomer(db, input.phone);
+    const [row] = await db
+      .insert(crmReports)
+      .values({
+        customerId,
+        customerName: input.customerName,
+        phone: input.phone,
+        normalizedPhone,
+        address: input.address ?? null,
+        expedition: input.expedition ?? null,
+        memo: input.memo ?? null,
+        paymentMethod: input.paymentMethod ?? null,
+        shippingCost: BigInt(input.shippingCost ?? 0),
+        packingCost: BigInt(input.packingCost ?? 0),
+        discount: BigInt(input.discount ?? 0),
+        adminCod: BigInt(input.adminCod ?? 0),
+        totalPayment: calculatedTotalPayment(input),
+        csName: input.csName ?? null,
+        advName: input.advName ?? null,
+        note: input.note ?? null,
+        hub: input.hub ?? null,
+        city: input.city ?? null,
+        reportDate: input.reportDate,
+        orderClosingCount: input.orderClosingCount != null ? Number(input.orderClosingCount) : null,
+        salesType: input.salesType ?? null,
+        platform: input.platform ?? null,
+        division: input.division ?? null,
+        dataReceivedCount: input.dataReceivedCount != null ? Number(input.dataReceivedCount) : null,
+        crmVoucher: input.crmVoucher ?? null,
+        codValue: BigInt(input.codValue ?? 0),
+        recipientDistrict: input.recipientDistrict ?? null,
+        recipientPostalCode: input.recipientPostalCode ?? null,
+        partner: input.partner ?? null,
+        crmMarketingCost: BigInt(input.crmMarketingCost ?? 0),
+        createdBy: userId,
+        updatedBy: userId,
+      })
+      .returning({ id: crmReports.id });
+    if (!row) throw new Error("Gagal membuat CRM Report");
 
-  await db.insert(crmReportItems).values(toItemValues(row.id, input.items));
-  return row.id;
+    await db.insert(crmReportItems).values(toItemValues(row.id, input.items));
+    return row.id;
+  });
 }
 
 export async function updateReport(id: number, input: CrmReportBody, userId: number): Promise<void> {
-  const { customerId, normalizedPhone } = await resolveCustomer(input.phone);
-  const db = getDb();
-  const result = await db
-    .update(crmReports)
-    .set({
-      customerId,
-      customerName: input.customerName,
-      phone: input.phone,
-      normalizedPhone,
-      address: input.address ?? null,
-      expedition: input.expedition ?? null,
-      memo: input.memo ?? null,
-      paymentMethod: input.paymentMethod ?? null,
-      shippingCost: BigInt(input.shippingCost ?? 0),
-      packingCost: BigInt(input.packingCost ?? 0),
-      discount: BigInt(input.discount ?? 0),
-      adminCod: BigInt(input.adminCod ?? 0),
-      totalPayment: calculatedTotalPayment(input),
-      csName: input.csName ?? null,
-      advName: input.advName ?? null,
-      note: input.note ?? null,
-      hub: input.hub ?? null,
-      city: input.city ?? null,
-      reportDate: input.reportDate,
-      orderClosingCount: input.orderClosingCount != null ? Number(input.orderClosingCount) : null,
-      salesType: input.salesType ?? null,
-      platform: input.platform ?? null,
-      division: input.division ?? null,
-      dataReceivedCount: input.dataReceivedCount != null ? Number(input.dataReceivedCount) : null,
-      crmVoucher: input.crmVoucher ?? null,
-      codValue: BigInt(input.codValue ?? 0),
-      recipientDistrict: input.recipientDistrict ?? null,
-      recipientPostalCode: input.recipientPostalCode ?? null,
-      partner: input.partner ?? null,
-      crmMarketingCost: BigInt(input.crmMarketingCost ?? 0),
-      updatedBy: userId,
-      updatedAt: new Date(),
-    })
-    .where(eq(crmReports.id, id))
-    .returning({ id: crmReports.id });
-  if (!result[0]) throw new CrmReportNotFoundError();
+  await withTransaction(async (client) => {
+    const db = transactionDb(client);
+    const { customerId, normalizedPhone } = await resolveCustomer(db, input.phone);
+    const result = await db
+      .update(crmReports)
+      .set({
+        customerId,
+        customerName: input.customerName,
+        phone: input.phone,
+        normalizedPhone,
+        address: input.address ?? null,
+        expedition: input.expedition ?? null,
+        memo: input.memo ?? null,
+        paymentMethod: input.paymentMethod ?? null,
+        shippingCost: BigInt(input.shippingCost ?? 0),
+        packingCost: BigInt(input.packingCost ?? 0),
+        discount: BigInt(input.discount ?? 0),
+        adminCod: BigInt(input.adminCod ?? 0),
+        totalPayment: calculatedTotalPayment(input),
+        csName: input.csName ?? null,
+        advName: input.advName ?? null,
+        note: input.note ?? null,
+        hub: input.hub ?? null,
+        city: input.city ?? null,
+        reportDate: input.reportDate,
+        orderClosingCount: input.orderClosingCount != null ? Number(input.orderClosingCount) : null,
+        salesType: input.salesType ?? null,
+        platform: input.platform ?? null,
+        division: input.division ?? null,
+        dataReceivedCount: input.dataReceivedCount != null ? Number(input.dataReceivedCount) : null,
+        crmVoucher: input.crmVoucher ?? null,
+        codValue: BigInt(input.codValue ?? 0),
+        recipientDistrict: input.recipientDistrict ?? null,
+        recipientPostalCode: input.recipientPostalCode ?? null,
+        partner: input.partner ?? null,
+        crmMarketingCost: BigInt(input.crmMarketingCost ?? 0),
+        updatedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(crmReports.id, id))
+      .returning({ id: crmReports.id });
+    if (!result[0]) throw new CrmReportNotFoundError();
 
-  await db.delete(crmReportItems).where(eq(crmReportItems.crmReportId, id));
-  await db.insert(crmReportItems).values(toItemValues(id, input.items));
+    await db.delete(crmReportItems).where(eq(crmReportItems.crmReportId, id));
+    await db.insert(crmReportItems).values(toItemValues(id, input.items));
+  });
 }
 
 /** Total nilai laporan sesuai filter aktif — KPI "nilai laporan/closing" di
@@ -497,11 +509,11 @@ export async function buildExportRows(filter: CrmReportListFilter): Promise<CrmR
       Ekspedisi: String(row.expedition ?? ""),
       Memo: String(row.memo ?? ""),
       Pembayaran: String(row.payment_method ?? ""),
-      Ongkir: Number(row.shipping_cost ?? 0),
-      Packing: Number(row.packing_cost ?? 0),
-      Diskon: Number(row.discount ?? 0),
-      AdminCOD: Number(row.admin_cod ?? 0),
-      TotalBayar: Number(row.total_payment ?? 0),
+      Ongkir: String(row.shipping_cost ?? "0"),
+      Packing: String(row.packing_cost ?? "0"),
+      Diskon: String(row.discount ?? "0"),
+      AdminCOD: String(row.admin_cod ?? "0"),
+      TotalBayar: String(row.total_payment ?? "0"),
       NamaCS: String(row.cs_name ?? ""),
       NamaADV: String(row.adv_name ?? ""),
       Note: String(row.note ?? ""),
@@ -514,17 +526,17 @@ export async function buildExportRows(filter: CrmReportListFilter): Promise<CrmR
       Divisi: String(row.division ?? ""),
       JumlahTerimaData: Number(row.data_received_count ?? 0),
       VoucherCRM: String(row.crm_voucher ?? ""),
-      NilaiCOD: Number(row.cod_value ?? 0),
+      NilaiCOD: String(row.cod_value ?? "0"),
       KecamatanPenerima: String(row.recipient_district ?? ""),
       KodePosPenerima: String(row.recipient_postal_code ?? ""),
       Mitra: String(row.partner ?? ""),
-      BiayaMarketingCRM: Number(row.crm_marketing_cost ?? 0),
+      BiayaMarketingCRM: String(row.crm_marketing_cost ?? "0"),
     };
     for (let i = 0; i < 5; i++) {
       const item = items[i];
       flat[`Produk${i + 1}`] = item?.name ?? "";
       flat[`QTY${i + 1}`] = item ? Number(item.qty) : "";
-      flat[`NilaiProduk${i + 1}`] = item ? Number(item.value) : "";
+      flat[`NilaiProduk${i + 1}`] = item?.value ?? "";
     }
     return flat;
   });

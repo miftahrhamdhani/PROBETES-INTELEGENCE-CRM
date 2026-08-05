@@ -85,6 +85,13 @@
       "when": 1785763827439,
       "tag": "0011_steep_hannibal_king",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785894096921,
+      "tag": "0012_smart_tombstone",
+      "breakpoints": true
     }
   ]
 }

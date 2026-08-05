@@ -44,4 +44,16 @@ describe("CRM Report worksheet", () => {
     expect(parsed.city).toBe("BANDUNG");
     expect(parsed.division).toBe("CRM");
   });
+
+  it("menolak nilai rupiah dan total di atas Number.MAX_SAFE_INTEGER", () => {
+    expect(crmReportSchema.safeParse({ ...baseReport, shippingCost: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
+    expect(() =>
+      calculateCrmReportTotals([{ qty: 2, productValue: Number.MAX_SAFE_INTEGER }], {
+        shippingCost: 0,
+        packingCost: 0,
+        discount: 0,
+        adminCod: 0,
+      })
+    ).toThrow("batas aman JavaScript");
+  });
 });

@@ -13,8 +13,7 @@ const toneClasses = {
   violet: "border-violet-400 bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40",
 } as const;
 
-/** KPI Workspace > Laporan Kerja. Jumlah tugas dihitung real-time global (sama
- *  sumber dengan Overview); nilai laporan dihitung dari filter yang sedang aktif. */
+/** KPI task tetap global; nilai laporan mengikuti filter aktif. */
 export function WorkspaceReportKpiTiles({
   kpi,
   reportTotalValue,
@@ -26,12 +25,12 @@ export function WorkspaceReportKpiTiles({
   const totalTugas = belumSelesai + kpi.done;
 
   const tiles: { key: string; label: string; value: string; tone: keyof typeof toneClasses }[] = [
-    { key: "total", label: "Jumlah Tugas", value: totalTugas.toLocaleString("id-ID"), tone: "slate" },
-    { key: "done", label: "Selesai", value: kpi.done.toLocaleString("id-ID"), tone: "green" },
-    { key: "pending", label: "Belum Selesai", value: belumSelesai.toLocaleString("id-ID"), tone: "amber" },
-    { key: "overdue", label: "Overdue", value: kpi.overdue.toLocaleString("id-ID"), tone: "red" },
-    { key: "closing", label: "Closing", value: kpi.closing.toLocaleString("id-ID"), tone: "teal" },
-    { key: "joined", label: "Masuk Grup", value: kpi.joinedGroup.toLocaleString("id-ID"), tone: "green" },
+    { key: "total", label: "Jumlah Tugas (Semua)", value: totalTugas.toLocaleString("id-ID"), tone: "slate" },
+    { key: "done", label: "Selesai (Semua)", value: kpi.done.toLocaleString("id-ID"), tone: "green" },
+    { key: "pending", label: "Belum Selesai (Semua)", value: belumSelesai.toLocaleString("id-ID"), tone: "amber" },
+    { key: "overdue", label: "Overdue (Semua)", value: kpi.overdue.toLocaleString("id-ID"), tone: "red" },
+    { key: "closing", label: "Closing (Semua)", value: kpi.closing.toLocaleString("id-ID"), tone: "teal" },
+    { key: "joined", label: "Masuk Grup (Semua)", value: kpi.joinedGroup.toLocaleString("id-ID"), tone: "green" },
     {
       key: "value",
       label: `Nilai Laporan (${reportTotalValue.count.toLocaleString("id-ID")} laporan)`,
@@ -41,17 +40,20 @@ export function WorkspaceReportKpiTiles({
   ];
 
   return (
-    <FadeInStagger className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Ringkasan Laporan Kerja">
-      {tiles.map((tile) => (
-        <FadeInItem key={tile.key}>
-          <Card className={cn("h-full", toneClasses[tile.tone])}>
-            <CardContent className="p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide">{tile.label}</p>
-              <p className="mt-1 text-xl font-bold tabular">{tile.value}</p>
-            </CardContent>
-          </Card>
-        </FadeInItem>
-      ))}
-    </FadeInStagger>
+    <div className="space-y-1">
+      <p className="text-[11px] text-muted-foreground">KPI tugas berlingkup semua task; Nilai Laporan mengikuti filter aktif.</p>
+      <FadeInStagger className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-label="Ringkasan Laporan Kerja">
+        {tiles.map((tile) => (
+          <FadeInItem key={tile.key}>
+            <Card className={cn("h-full", toneClasses[tile.tone])}>
+              <CardContent className="p-3">
+                <p className="text-[10px] font-bold uppercase tracking-wide">{tile.label}</p>
+                <p className="mt-1 text-xl font-bold tabular">{tile.value}</p>
+              </CardContent>
+            </Card>
+          </FadeInItem>
+        ))}
+      </FadeInStagger>
+    </div>
   );
 }
