@@ -9,9 +9,11 @@ import { isUserRole, LOGIN_PATH, type UserRole } from "@/lib/roles";
  * dipantulkan ke /login.
  */
 export const authConfig = {
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "probetes-crm-secret-key-2026-production",
   session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
   pages: { signIn: LOGIN_PATH },
   trustHost: true,
+
   callbacks: {
     jwt({ token, user }) {
       if (user) {
