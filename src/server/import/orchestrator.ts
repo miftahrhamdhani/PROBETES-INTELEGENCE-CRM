@@ -18,6 +18,11 @@ import {
   productFlagsForCode,
 } from "@/server/normalize/product-catalog";
 import { detectNewCustomersFromBatch } from "@/server/workspace/detection";
+import { allocateOrderComponents } from "@/server/workspace/allocation";
+import { classifyCrmTransaction, createOrderFingerprint } from "@/server/workspace/classification";
+import { sourceValue } from "./source-row";
+import { reconcileImportCandidates } from "@/server/workspace/reconciliation";
+import { ingestWorkspaceOrdersFromImport } from "@/server/workspace/pesanan-import";
 import { loadApprovedAliasOverlay } from "@/server/product/aliases";
 import { parseDatabaseAll } from "./database-all-parser";
 import type {
@@ -224,6 +229,7 @@ export async function commitDatabaseAllImport(batchId: number): Promise<ImportCo
         throw new Error("Produk canonical belum di-seed. Jalankan npm run db:seed");
       }
 
+      await persistCrmClassifications(client, batchId, rows);
       const customerIdByPhone = await bulkUpsertCustomers(client, parsed.orders, batchId);
       const csIdByName = await bulkUpsertCsAgents(client, parsed.orders);
       const orderIdByKey = await bulkUpsertOrders(client, parsed.orders, customerIdByPhone, csIdByName, batchId);
@@ -244,10 +250,14 @@ export async function commitDatabaseAllImport(batchId: number): Promise<ImportCo
       await rebuildRfm(client, asOfDate);
       await rebuildClusters(client, batchId, asOfDate);
 
-      // Workspace: antrean CRM untuk customer yang baru pertama kali muncul di
-      // batch ini — di DALAM transaction yang sama supaya rollback commit juga
-      // membatalkan task (lihat src/server/workspace/detection.ts).
+      // Workspace: reconciliation dan antrean customer baru tetap atomik dengan import.
+      await reconcileImportCandidates(client);
       await detectNewCustomersFromBatch(client, batchId);
+
+      // Workspace CRM V1 (fresh start) — hanya order tanggal >= cutover, hanya
+      // yang seluruh produknya sudah punya alias Master Data (docs prompt §10).
+      // Sepenuhnya independen dari layer di atas (orders/order_items legacy).
+      await ingestWorkspaceOrdersFromImport(client, parsed.orders, batchId);
 
       await query(
         client,
@@ -292,6 +302,52 @@ export async function commitDatabaseAllImport(batchId: number): Promise<ImportCo
         .where(eq(importBatches.id, batchId));
     }
     throw error;
+  }
+}
+
+async function persistCrmClassifications(
+  client: TransactionClient,
+  batchId: number,
+  rows: SourceRow[]
+): Promise<void> {
+  const rowNumbers: number[] = [];
+  const included: boolean[] = [];
+  const inclusionReasons: Array<string | null> = [];
+  const exclusionReasons: Array<string | null> = [];
+  const mappingVersions: string[] = [];
+  for (const row of rows) {
+    const classification = classifyCrmTransaction({
+      division: sourceValue(row, "DIVISI"),
+      platform: sourceValue(row, "Platform"),
+    });
+    rowNumbers.push(row.rowNumber);
+    included.push(classification.included);
+    inclusionReasons.push(classification.inclusionReason);
+    exclusionReasons.push(classification.exclusionReason);
+    mappingVersions.push(classification.mappingVersion);
+  }
+  for (let start = 0; start < rowNumbers.length; start += BATCH_SIZE) {
+    const end = start + BATCH_SIZE;
+    await query(
+      client,
+      `UPDATE staging_import_rows sr SET
+         is_crm_transaction = v.included,
+         crm_inclusion_reason = v.inclusion_reason,
+         crm_exclusion_reason = v.exclusion_reason,
+         crm_mapping_version = v.mapping_version,
+         classified_at = now()
+       FROM unnest($2::int[], $3::bool[], $4::text[], $5::text[], $6::text[])
+         AS v(row_number, included, inclusion_reason, exclusion_reason, mapping_version)
+       WHERE sr.import_batch_id = $1 AND sr.row_number = v.row_number`,
+      [
+        batchId,
+        rowNumbers.slice(start, end),
+        included.slice(start, end),
+        inclusionReasons.slice(start, end),
+        exclusionReasons.slice(start, end),
+        mappingVersions.slice(start, end),
+      ]
+    );
   }
 }
 
@@ -364,29 +420,50 @@ async function bulkUpsertOrders(
     const customerIds = group.map((order) => customerIdByPhone.get(order.normalizedPhone) ?? null);
     const dates = group.map((order) => order.orderDate);
     const totals = group.map((order) => order.orderTotal.toString());
+    const workspaceTotals = group.map((order) => (order.workspaceTotal > 0n ? order.workspaceTotal : order.orderTotal).toString());
     const platforms = group.map((order) => order.platform || null);
     const divisions = group.map((order) => order.division || null);
     const paymentMethods = group.map((order) => order.paymentMethod || null);
     const partners = group.map((order) => order.partner || null);
     const csIds = group.map((order) => (order.csName ? csIdByName.get(order.csName) ?? null : null));
     const memos = group.map((order) => order.memo || null);
+    const fingerprints = group.map((order) => createOrderFingerprint({
+      source: "DATABASE_ALL",
+      orderDate: order.orderDate,
+      normalizedPhone: order.normalizedPhone,
+      customerName: order.customerName,
+      csName: order.csName,
+      total: order.workspaceTotal > 0n ? order.workspaceTotal : order.orderTotal,
+      items: order.items.map((item) => ({ product: item.rawProductName, qty: item.qty, amount: item.amount })),
+    }));
 
     const rows = await query<{ id: string; source_order_key: string }>(
       client,
       `INSERT INTO orders (
-         source_order_key, customer_id, order_date, order_total, platform, division,
-         payment_method, partner, cs_id, memo, source_batch_id, updated_at
+         source_order_key, customer_id, order_date, order_total, workspace_total, platform, division,
+         payment_method, partner, cs_id, memo, source_batch_id, deterministic_fingerprint,
+         transaction_status, is_crm_transaction, crm_inclusion_reason, crm_mapping_version,
+         city, hub, sales_type, shipping_cost, packing_cost, discount, admin_cod,
+         crm_marketing_cost, order_closing_count, updated_at
        )
-       SELECT key, customer_id, order_date::date, total::bigint, platform, division,
-         payment_method, partner, cs_id, memo, $11, now()
+       SELECT key, customer_id, order_date::date, total::bigint, workspace_total::bigint, platform, division,
+         payment_method, partner, cs_id, memo, $13, fingerprint,
+         transaction_status::crm_transaction_status, is_crm, inclusion_reason, mapping_version,
+         city, hub, sales_type, shipping::bigint, packing::bigint, discount::bigint, admin_cod::bigint,
+         marketing::bigint, closing_count, now()
        FROM unnest(
          $1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[],
-         $7::text[], $8::text[], $9::int[], $10::text[]
-       ) AS t(key, customer_id, order_date, total, platform, division, payment_method, partner, cs_id, memo)
+         $7::text[], $8::text[], $9::int[], $10::text[], $11::text[], $12::text[],
+         $14::text[], $15::bool[], $16::text[], $17::text[], $18::text[], $19::text[],
+         $20::text[], $21::text[], $22::text[], $23::text[], $24::text[], $25::text[], $26::int[]
+       ) AS t(key, customer_id, order_date, total, workspace_total, platform, division, payment_method,
+         partner, cs_id, memo, fingerprint, transaction_status, is_crm, inclusion_reason, mapping_version,
+         city, hub, sales_type, shipping, packing, discount, admin_cod, marketing, closing_count)
        ON CONFLICT (source_order_key) DO UPDATE SET
          customer_id = EXCLUDED.customer_id,
          order_date = EXCLUDED.order_date,
          order_total = EXCLUDED.order_total,
+         workspace_total = EXCLUDED.workspace_total,
          platform = EXCLUDED.platform,
          division = EXCLUDED.division,
          payment_method = EXCLUDED.payment_method,
@@ -394,9 +471,35 @@ async function bulkUpsertOrders(
          cs_id = EXCLUDED.cs_id,
          memo = EXCLUDED.memo,
          source_batch_id = EXCLUDED.source_batch_id,
+         deterministic_fingerprint = EXCLUDED.deterministic_fingerprint,
+         transaction_status = EXCLUDED.transaction_status,
+         is_crm_transaction = EXCLUDED.is_crm_transaction,
+         crm_inclusion_reason = EXCLUDED.crm_inclusion_reason,
+         crm_mapping_version = EXCLUDED.crm_mapping_version,
+         city = EXCLUDED.city, hub = EXCLUDED.hub, sales_type = EXCLUDED.sales_type,
+         shipping_cost = EXCLUDED.shipping_cost, packing_cost = EXCLUDED.packing_cost,
+         discount = EXCLUDED.discount, admin_cod = EXCLUDED.admin_cod,
+         crm_marketing_cost = EXCLUDED.crm_marketing_cost,
+         order_closing_count = EXCLUDED.order_closing_count,
          updated_at = now()
        RETURNING id::text, source_order_key`,
-      [keys, customerIds, dates, totals, platforms, divisions, paymentMethods, partners, csIds, memos, batchId]
+      [
+        keys, customerIds, dates, totals, workspaceTotals, platforms, divisions, paymentMethods, partners,
+        csIds, memos, fingerprints, batchId,
+        group.map((order) => order.transactionStatus),
+        group.map((order) => order.crmClassification.included),
+        group.map((order) => order.crmClassification.inclusionReason),
+        group.map((order) => order.crmClassification.mappingVersion),
+        group.map((order) => order.city || null),
+        group.map((order) => order.hub || null),
+        group.map((order) => order.salesType || null),
+        group.map((order) => order.shippingCost.toString()),
+        group.map((order) => order.packingCost.toString()),
+        group.map((order) => order.discount.toString()),
+        group.map((order) => order.adminCod.toString()),
+        group.map((order) => order.crmMarketingCost.toString()),
+        group.map((order) => order.orderClosingCount),
+      ]
     );
     for (const row of rows.rows) result.set(row.source_order_key, row.id);
   }
@@ -411,20 +514,46 @@ async function bulkInsertItems(
 ): Promise<number> {
   const unknown = products.get("UNKNOWN");
   if (!unknown) throw new Error("Produk UNKNOWN tidak tersedia");
+  const hppRows = await query<{ product_id: number; unit_hpp: string; effective_from: string; effective_to: string | null }>(
+    client,
+    "SELECT product_id, unit_hpp::text, effective_from::text, effective_to::text FROM product_hpp_history ORDER BY product_id, effective_from"
+  );
+  const hppByProduct = new Map<number, typeof hppRows.rows>();
+  for (const row of hppRows.rows) hppByProduct.set(row.product_id, [...(hppByProduct.get(row.product_id) ?? []), row]);
 
   const seenKeys = new Set<string>();
   const items: {
     key: string; orderId: string; productId: number; rawName: string;
     externalId: string | null; qty: string | null; amount: string;
     isBonus: boolean; identityConfidence: string; sourceRowNumber: number;
+    sellingPrice: string; gross: string; unitHpp: string | null; totalHpp: string | null;
+    hppStatus: "KNOWN" | "UNKNOWN"; allocatedDiscount: string; allocatedPacking: string;
+    allocatedAdminCod: string; allocatedCom: string; netRevenue: string;
   }[] = [];
   for (const order of orders) {
     const orderId = orderIdByKey.get(order.sourceOrderKey);
     if (!orderId) throw new Error(`Order id tidak ditemukan untuk ${order.sourceOrderKey}`);
-    for (const item of order.items) {
-      if (seenKeys.has(item.sourceItemKey)) continue;
+    const uniqueItems = order.items.filter((item) => {
+      if (seenKeys.has(item.sourceItemKey)) return false;
       seenKeys.add(item.sourceItemKey);
+      return true;
+    });
+    const prepared = uniqueItems.map((item) => {
       const resolved = products.get(item.productFlags.code) ?? unknown;
+      const hpp = hppByProduct.get(resolved.id)?.find(
+        (candidate) => candidate.effective_from <= order.orderDate && (!candidate.effective_to || order.orderDate < candidate.effective_to)
+      );
+      const quantity = quantityAsBigInt(item.qty);
+      return { item, resolved, quantity, unitHpp: hpp ? BigInt(hpp.unit_hpp) : null };
+    });
+    const allocated = allocateOrderComponents(
+      prepared.map(({ item, quantity, unitHpp }) => ({ key: item.sourceItemKey, gross: item.amount, quantity, unitHpp })),
+      { discount: order.discount, packing: order.packingCost, adminCod: order.adminCod, voucher: 0n, com: order.crmMarketingCost }
+    );
+    const allocationByKey = new Map(allocated.map((row) => [row.key, row]));
+
+    for (const { item, resolved, quantity, unitHpp } of prepared) {
+      const allocation = allocationByKey.get(item.sourceItemKey)!;
       items.push({
         key: item.sourceItemKey,
         orderId,
@@ -436,6 +565,16 @@ async function bulkInsertItems(
         isBonus: item.isBonus,
         identityConfidence: item.identityConfidence,
         sourceRowNumber: item.sourceRowNumber,
+        sellingPrice: quantity > 0n ? (item.amount / quantity).toString() : item.amount.toString(),
+        gross: item.amount.toString(),
+        unitHpp: unitHpp?.toString() ?? null,
+        totalHpp: allocation.totalHpp?.toString() ?? null,
+        hppStatus: allocation.hppStatus,
+        allocatedDiscount: allocation.allocatedDiscount.toString(),
+        allocatedPacking: allocation.allocatedPacking.toString(),
+        allocatedAdminCod: allocation.allocatedAdminCod.toString(),
+        allocatedCom: allocation.allocatedCom.toString(),
+        netRevenue: allocation.netRevenue.toString(),
       });
     }
   }
@@ -445,29 +584,44 @@ async function bulkInsertItems(
       client,
       `INSERT INTO order_items (
          source_item_key, order_id, product_id, raw_product_name, external_id,
-         qty, amount, is_bonus, identity_confidence, source_row_number
+         qty, amount, is_bonus, identity_confidence, source_row_number,
+         selling_price, gross_item_value, unit_hpp_snapshot, total_hpp, hpp_status,
+         allocation_sequence, allocated_discount, allocated_packing, allocated_admin_cod,
+         allocated_com, net_item_revenue
        )
        SELECT key, order_id::bigint, product_id, raw_name, external_id,
-         NULLIF(qty, '')::numeric, amount::bigint, is_bonus, identity_confidence::identity_confidence, source_row_number
+         NULLIF(qty, '')::numeric, amount::bigint, is_bonus, identity_confidence::identity_confidence, source_row_number,
+         selling_price::bigint, gross::bigint, NULLIF(unit_hpp, '')::bigint, NULLIF(total_hpp, '')::bigint,
+         hpp_status::crm_hpp_status, source_row_number, allocated_discount::bigint, allocated_packing::bigint,
+         allocated_admin_cod::bigint, allocated_com::bigint, net_revenue::bigint
        FROM unnest(
          $1::text[], $2::text[], $3::int[], $4::text[], $5::text[],
-         $6::text[], $7::text[], $8::bool[], $9::text[], $10::int[]
-       ) AS t(key, order_id, product_id, raw_name, external_id, qty, amount, is_bonus, identity_confidence, source_row_number)`,
+         $6::text[], $7::text[], $8::bool[], $9::text[], $10::int[],
+         $11::text[], $12::text[], $13::text[], $14::text[], $15::text[],
+         $16::text[], $17::text[], $18::text[], $19::text[], $20::text[]
+       ) AS t(key, order_id, product_id, raw_name, external_id, qty, amount, is_bonus,
+         identity_confidence, source_row_number, selling_price, gross, unit_hpp, total_hpp,
+         hpp_status, allocated_discount, allocated_packing, allocated_admin_cod, allocated_com, net_revenue)`,
       [
-        group.map((i) => i.key),
-        group.map((i) => i.orderId),
-        group.map((i) => i.productId),
-        group.map((i) => i.rawName),
-        group.map((i) => i.externalId),
-        group.map((i) => i.qty),
-        group.map((i) => i.amount),
-        group.map((i) => i.isBonus),
-        group.map((i) => i.identityConfidence),
-        group.map((i) => i.sourceRowNumber),
+        group.map((i) => i.key), group.map((i) => i.orderId), group.map((i) => i.productId),
+        group.map((i) => i.rawName), group.map((i) => i.externalId), group.map((i) => i.qty),
+        group.map((i) => i.amount), group.map((i) => i.isBonus), group.map((i) => i.identityConfidence),
+        group.map((i) => i.sourceRowNumber), group.map((i) => i.sellingPrice), group.map((i) => i.gross),
+        group.map((i) => i.unitHpp), group.map((i) => i.totalHpp), group.map((i) => i.hppStatus),
+        group.map((i) => i.allocatedDiscount), group.map((i) => i.allocatedPacking),
+        group.map((i) => i.allocatedAdminCod), group.map((i) => i.allocatedCom), group.map((i) => i.netRevenue),
       ]
     );
   }
   return items.length;
+}
+
+function quantityAsBigInt(value: string | null): bigint {
+  if (!value) return 1n;
+  const normalized = value.trim();
+  if (/^\d+$/.test(normalized)) return BigInt(normalized);
+  if (/^\d+\.0+$/.test(normalized)) return BigInt(normalized.slice(0, normalized.indexOf(".")));
+  throw new Error(`Qty non-integer tidak didukung untuk snapshot HPP: ${value}`);
 }
 
 /**

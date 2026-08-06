@@ -13,10 +13,11 @@ import {
   ClipboardList,
   Database,
   FileClock,
-  FileText,
   LayoutDashboard,
   ListTodo,
   Map,
+  Package,
+  Receipt,
   Scale,
   SearchCheck,
   Settings2,
@@ -74,9 +75,10 @@ export const NAV_TREE: NavNode[] = [
     icon: Briefcase,
     items: [
       { href: "/workspace/overview", label: "Overview", icon: SquareKanban },
+      { href: "/workspace/pesanan", label: "Pesanan", icon: ClipboardList },
       { href: "/workspace/pembagian-tugas", label: "Pembagian Tugas", icon: ListTodo },
-      { href: "/workspace/input-kerja", label: "Input Kerja", icon: ClipboardList },
-      { href: "/workspace/laporan-kerja", label: "Laporan Kerja", icon: FileText },
+      { href: "/workspace/master-data", label: "Master Data", icon: Package },
+      { href: "/workspace/biaya-operasional", label: "Biaya Operasional", icon: Receipt },
     ],
   },
   {
@@ -130,30 +132,3 @@ export function activeCategoryFor(nodes: NavNode[], pathname: string): string | 
   return match?.id ?? null;
 }
 
-/**
- * BUG FIX: "sidebar suka kosong" — setiap halaman memanggil `<AppShell>` sendiri
- * (tidak ada layout bersama), jadi `AppSidebar`/`MobileNav` di-mount ulang di
- * SETIAP navigasi. `loading.tsx` (Suspense fallback) menambah satu mount lagi:
- * fallback me-render AppShellSkeleton -> AppSidebar sebelum halaman asli siap.
- *
- * `useSession().data?.user?.role` bisa transien `undefined` tepat di jendela
- * remount itu (revalidasi fokus NextAuth, race saat Suspense menukar fallback
- * dengan konten asli). `visibleNavNodes(undefined)` -> array kosong -> seluruh
- * menu hilang tanpa indikasi loading sama sekali — persis yang dilaporkan user.
- *
- * Middleware SUDAH memastikan user login+berhak untuk halaman yang sedang
- * dibuka (kalau tidak, dia sudah di-redirect sebelum sidebar sempat render).
- * Jadi begitu `role` valid pernah terlihat di tab ini, dia TIDAK PERNAH boleh
- * dianggap hilang lagi — nilai lama disimpan di variabel modul (bertahan
- * lintas mount/unmount komponen selama tab belum di-reload penuh) dan dipakai
- * sebagai fallback saat bacaan sesi sesaat kosong.
- *
- * Ini murni resiliensi tampilan. Otorisasi sesungguhnya tetap di middleware +
- * `requireRole` per Server Action (src/server/auth/guards.ts) — tidak berubah.
- */
-let lastKnownRole: UserRole | undefined;
-
-export function resolveStableRole(sessionRole: UserRole | undefined): UserRole | undefined {
-  if (sessionRole) lastKnownRole = sessionRole;
-  return sessionRole ?? lastKnownRole;
-}

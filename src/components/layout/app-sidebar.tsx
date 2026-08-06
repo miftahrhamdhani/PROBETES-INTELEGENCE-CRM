@@ -2,17 +2,15 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   activeCategoryFor,
   isActivePath,
-  resolveStableRole,
   visibleNavNodes,
   type NavCategoryNode,
   type NavLeaf,
@@ -20,6 +18,8 @@ import {
 } from "./nav-tree";
 import { cn } from "@/lib/utils";
 import type { ActiveDatasetInfo } from "@/lib/dataset-types";
+import type { UserRole } from "@/lib/roles";
+import { EAGER_PREFETCH_HREFS, usePrefetchLinkProps } from "./prefetch";
 
 
 
@@ -54,15 +54,20 @@ export function AppSidebar({
   collapsed,
   onToggleCollapsed,
   dataset,
+  role,
 }: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   dataset: ActiveDatasetInfo;
+  /** Dari sesi server (AppShell -> AppShellClient), bukan `useSession()` client
+   *  — dulu sidebar bisa kosong total karena role transien-undefined tepat di
+   *  jendela remount (tiap halaman mounting ulang AppSidebar, ditambah
+   *  loading.tsx yang menambah satu mount lagi). Middleware sudah memverifikasi
+   *  akses sebelum halaman ini dirender, jadi role dari server selalu benar
+   *  dan tidak pernah kosong sesaat seperti hook client. */
+  role: UserRole | undefined;
 }) {
   const pathname = usePathname();
-  // resolveStableRole: lihat catatan bug "sidebar suka kosong" di nav-tree.ts —
-  // role transien-undefined saat remount tidak boleh mengosongkan menu.
-  const role = resolveStableRole(useSession().data?.user?.role);
   const reduceMotion = !!useReducedMotion();
 
   const visibleNodes = React.useMemo(() => visibleNavNodes(role), [role]);
@@ -71,17 +76,26 @@ export function AppSidebar({
     [visibleNodes, pathname]
   );
 
-  const [openCategories, setOpenCategories] = React.useState<Set<string>>(new Set());
+  // Lazy initializer (bukan `new Set()` kosong): kategori yang berisi route
+  // aktif SUDAH terbuka pada render PERTAMA — termasuk HTML dari server.
+  // `activeCategoryId` dihitung murni dari `pathname` (tersedia identik di
+  // server maupun client via `usePathname()`), jadi initializer ini
+  // menghasilkan Set yang sama di kedua sisi -> tidak ada hydration mismatch,
+  // dan tidak ada flash "tertutup lalu terbuka" untuk kategori aktif.
+  const [openCategories, setOpenCategories] = React.useState<Set<string>>(() =>
+    activeCategoryId ? new Set([activeCategoryId]) : new Set()
+  );
   const [hydrated, setHydrated] = React.useState(false);
 
-  // Muat state persisted sekali di client (localStorage tidak ada saat SSR) —
-  // kategori aktif (dari route saat ini) selalu ikut dibuka.
+  // Gabungkan preferensi localStorage (kategori LAIN yang pernah dibuka user)
+  // sekali di client — union, bukan replace, supaya kategori aktif yang sudah
+  // terbuka sejak initial state di atas tidak pernah ikut tertutup.
   React.useEffect(() => {
-    const initial = readPersistedCategories();
-    if (activeCategoryId) initial.add(activeCategoryId);
-    setOpenCategories(initial);
+    const persisted = readPersistedCategories();
+    if (persisted.size) {
+      setOpenCategories((prev) => new Set([...prev, ...persisted]));
+    }
     setHydrated(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Pindah halaman ke kategori yang sedang tertutup -> buka otomatis (merge,
@@ -275,6 +289,7 @@ function ActivePill({ reduceMotion, layoutId }: { reduceMotion: boolean; layoutI
 
 function ExpandedLeaf({ node, active, reduceMotion }: { node: NavLeafNode; active: boolean; reduceMotion: boolean }) {
   const Icon = node.icon;
+  const prefetchProps = usePrefetchLinkProps(node.href);
   return (
     <Link
       href={node.href}
@@ -283,6 +298,7 @@ function ExpandedLeaf({ node, active, reduceMotion }: { node: NavLeafNode; activ
         "relative flex h-9 items-center gap-3 rounded-md px-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active ? "text-primary-foreground shadow-sm dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
+      {...prefetchProps}
     >
       {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-expanded" /> : null}
       <Icon className="relative z-10 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -293,6 +309,7 @@ function ExpandedLeaf({ node, active, reduceMotion }: { node: NavLeafNode; activ
 
 function ExpandedChildLink({ item, active, reduceMotion }: { item: NavLeaf; active: boolean; reduceMotion: boolean }) {
   const Icon = item.icon;
+  const prefetchProps = usePrefetchLinkProps(item.href);
   return (
     <Link
       href={item.href}
@@ -301,6 +318,7 @@ function ExpandedChildLink({ item, active, reduceMotion }: { item: NavLeaf; acti
         "relative flex h-8 items-center gap-2.5 rounded-md pl-4 pr-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
       )}
+      {...prefetchProps}
     >
       {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-expanded" /> : null}
       <Icon className="relative z-10 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -323,6 +341,7 @@ function ExpandedCategory({
   reduceMotion: boolean;
 }) {
   const Icon = node.icon;
+  const router = useRouter();
   const panelId = `sidebar-panel-${node.id}`;
   const hasActiveChild = node.items.some((item) => isActivePath(pathname, item.href));
   const children = (
@@ -332,12 +351,33 @@ function ExpandedCategory({
       ))}
     </div>
   );
+  // Hover/focus di header kategori (sebelum diklik) sudah cukup sinyal niat
+  // membuka — prefetch anak-anaknya lebih awal daripada menunggu klik.
+  const prefetchChildren = React.useCallback(() => {
+    for (const item of node.items) {
+      if (!EAGER_PREFETCH_HREFS.has(item.href)) router.prefetch(item.href);
+    }
+  }, [node.items, router]);
+
+  // `motion.div initial={{height:0}}` menentukan style paint PERTAMA (termasuk
+  // HTML dari server) terlepas dari nilai `open` — kategori yang aktif sejak
+  // mount akan tetap ter-render height:0 lalu di-animate ke auto, alih-alih
+  // langsung terbuka penuh. Render statis (tanpa motion) untuk paint pertama
+  // ini, baru pakai motion.div untuk toggle SESUDAH mount — supaya animasi
+  // buka/tutup tetap halus saat user benar-benar mengklik.
+  const skipEnterAnimation = React.useRef(true);
+  React.useEffect(() => {
+    skipEnterAnimation.current = false;
+  }, []);
+  const renderStatic = reduceMotion || skipEnterAnimation.current;
 
   return (
     <div>
       <button
         type="button"
         onClick={onToggle}
+        onMouseEnter={prefetchChildren}
+        onFocus={prefetchChildren}
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
@@ -355,7 +395,7 @@ function ExpandedCategory({
           <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
         </motion.span>
       </button>
-      {reduceMotion ? (
+      {renderStatic ? (
         open ? (
           <div id={panelId}>{children}</div>
         ) : null
@@ -381,6 +421,7 @@ function ExpandedCategory({
 
 function RailLeaf({ node, active, reduceMotion }: { node: NavLeafNode; active: boolean; reduceMotion: boolean }) {
   const Icon = node.icon;
+  const prefetchProps = usePrefetchLinkProps(node.href);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -392,6 +433,7 @@ function RailLeaf({ node, active, reduceMotion }: { node: NavLeafNode; active: b
             "relative flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
           )}
+          {...prefetchProps}
         >
           {active ? <ActivePill reduceMotion={reduceMotion} layoutId="sidebar-active-pill-rail" /> : null}
           <Icon className="relative z-10 h-[18px] w-[18px]" aria-hidden="true" />
@@ -422,6 +464,19 @@ function RailCategory({
   reduceMotion: boolean;
 }) {
   const Icon = node.icon;
+  const router = useRouter();
+  // Flyout rail: kategori (bukan item) yang di-hover — prefetch seluruh item
+  // di dalamnya sekaligus saat flyout terbuka, karena user hampir pasti akan
+  // mengklik salah satunya begitu panel terlihat.
+  const prefetchChildren = React.useCallback(() => {
+    for (const item of node.items) {
+      if (!EAGER_PREFETCH_HREFS.has(item.href)) router.prefetch(item.href);
+    }
+  }, [node.items, router]);
+  const handleOpen = React.useCallback(() => {
+    onOpen();
+    prefetchChildren();
+  }, [onOpen, prefetchChildren]);
   return (
     <Popover open={open} onOpenChange={(next) => (!next ? onCloseNow() : undefined)}>
       <PopoverAnchor asChild>
@@ -430,10 +485,10 @@ function RailCategory({
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label={node.label}
-          onMouseEnter={onOpen}
+          onMouseEnter={handleOpen}
           onMouseLeave={onCloseDebounced}
-          onFocus={onOpen}
-          onClick={() => (open ? onCloseNow() : onOpen())}
+          onFocus={handleOpen}
+          onClick={() => (open ? onCloseNow() : handleOpen())}
           className={cn(
             "relative flex h-11 w-11 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             active ? "text-primary-foreground dark:text-[#020945]" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"

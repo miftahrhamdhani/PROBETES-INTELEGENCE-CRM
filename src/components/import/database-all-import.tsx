@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
-import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,7 +37,7 @@ export function DatabaseAllImport() {
 
       const buffer = await file.arrayBuffer();
       const fileHash = await sha256(buffer);
-      const { headers, rows } = isCsv ? parseCsvFile(buffer) : parseXlsxFile(buffer);
+      const { headers, rows } = isCsv ? parseCsvFile(buffer) : await parseXlsxFile(buffer);
       if (!headers.length) throw new Error("Header file kosong");
       if (!rows.length) throw new Error("Tidak ada baris data ditemukan");
       setProgress(15);
@@ -138,7 +137,15 @@ function busy(step: Step) { return step === "parsing" || step === "uploading" ||
 function serializeCell(value: unknown) { if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; return value; }
 async function sha256(buffer: ArrayBuffer) { return [...new Uint8Array(await crypto.subtle.digest("SHA-256", buffer))].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 
-function parseXlsxFile(buffer: ArrayBuffer): { headers: string[]; rows: ClientRow[] } {
+/**
+ * `xlsx` di-import DINAMIS (bukan statis di atas) — library terberat di
+ * seluruh aplikasi (~600 kB), padahal hanya dipakai SETELAH user memilih file
+ * .xlsx. Sebelumnya masuk bundle awal /import tanpa syarat, menjadikannya
+ * First Load JS terbesar di aplikasi ini (346 kB) walau usernya memilih .csv
+ * atau belum memilih file sama sekali.
+ */
+async function parseXlsxFile(buffer: ArrayBuffer): Promise<{ headers: string[]; rows: ClientRow[] }> {
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
   const sheet = workbook.Sheets.allbaru;
   if (!sheet) throw new Error("Sheet 'allbaru' tidak ditemukan");

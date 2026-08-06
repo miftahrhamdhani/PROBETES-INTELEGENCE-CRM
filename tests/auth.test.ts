@@ -56,18 +56,36 @@ describe("RBAC (docs/05-UI.md §3)", () => {
     { path: "/cluster", allowed: ["ADMIN", "CRM", "MANAGEMENT"] },
     { path: "/customers", allowed: ["ADMIN", "CRM"] },
     { path: "/groups", allowed: ["ADMIN", "CRM"] },
+    { path: "/workspace", allowed: ["ADMIN", "CRM"] },
     { path: "/import", allowed: ["ADMIN"] },
     { path: "/mapping", allowed: ["ADMIN"] },
     { path: "/quality", allowed: ["ADMIN"] },
     { path: "/history", allowed: ["ADMIN"] },
+    { path: "/reconciliation", allowed: ["ADMIN", "MANAGEMENT"] },
     { path: "/rules", allowed: ["ADMIN", "MANAGEMENT"] },
     { path: "/users", allowed: ["ADMIN"] },
     { path: "/api/import/commit", allowed: ["ADMIN"] },
+    { path: "/api/workspace/pesanan/export.csv", allowed: ["ADMIN", "CRM"] },
   ];
 
   it.each(matrix)("$path hanya untuk $allowed", ({ path, allowed }) => {
     for (const role of ["ADMIN", "CRM", "MANAGEMENT"] as UserRole[]) {
       expect(canAccessPath(role, path)).toBe(allowed.includes(role));
+    }
+  });
+
+  /**
+   * Regresi audit performa/QA §O: `/api/workspace/*` sebelumnya mengizinkan
+   * MANAGEMENT di level middleware padahal `/workspace/*` (page) tidak, dan
+   * `roleHasCrmPermission()` (crm-permissions.ts) TIDAK PERNAH memberi
+   * MANAGEMENT satu permission domain CRM apa pun — inkonsistensi murni
+   * (bukan celah aktif, karena route handler tetap menolak lewat
+   * requireCrmPermission, tapi middleware seharusnya sudah menolak duluan).
+   * Kedua prefix WAJIB memberi hasil yang SAMA untuk setiap role.
+   */
+  it("/workspace dan /api/workspace konsisten untuk setiap role", () => {
+    for (const role of ["ADMIN", "CRM", "MANAGEMENT"] as UserRole[]) {
+      expect(canAccessPath(role, "/workspace/pesanan")).toBe(canAccessPath(role, "/api/workspace/pesanan/export.csv"));
     }
   });
 

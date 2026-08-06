@@ -92,6 +92,62 @@
       "when": 1785894096921,
       "tag": "0012_smart_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785904175610,
+      "tag": "0013_chilly_peter_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785936881602,
+      "tag": "0014_workspace_crm_v1",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1785939484765,
+      "tag": "0015_workspace_import_integration",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785942061082,
+      "tag": "0016_workspace_status_and_quality",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785989428697,
+      "tag": "0017_workspace_orders_generation_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785996538456,
+      "tag": "0018_harsh_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785998933900,
+      "tag": "0019_zippy_northstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786006414628,
+      "tag": "0020_romantic_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }

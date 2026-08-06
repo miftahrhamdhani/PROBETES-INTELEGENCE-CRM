@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadDataQualityIssues } from "@/app/import-admin-actions";
 import { AppShell } from "@/components/layout/app-shell";
-import { Pagination } from "@/components/customer/pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { IssueDetail } from "@/components/quality/issue-detail";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,9 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
     }
     return `/quality?${query.toString()}`;
   }
+
+  const totalPages = Math.max(Math.ceil(result.total / result.perPage), 1);
+  const currentPage = Math.min(result.page, totalPages);
 
   const exclusionCodes = IMPORT_ISSUE_CODES.filter(isImportExclusionCode);
   const operationalCodes = IMPORT_ISSUE_CODES.filter((code) => !isImportExclusionCode(code));
@@ -129,7 +132,14 @@ export default async function DataQualityPage({ searchParams }: { searchParams: 
                 ))}
               </div>
             ) : <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Tidak ada issue untuk filter ini.</p>}
-            <Pagination page={result.page} perPage={result.perPage} total={result.total} hrefForPage={(target) => href({ page: String(target) })} />
+            <Pagination
+              page={result.page}
+              perPage={result.perPage}
+              total={result.total}
+              prevHref={currentPage > 1 ? href({ page: String(currentPage - 1) }) : null}
+              nextHref={currentPage < totalPages ? href({ page: String(currentPage + 1) }) : null}
+              label="issue"
+            />
           </CardContent>
         </Card>
       </div>

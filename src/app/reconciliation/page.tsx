@@ -4,6 +4,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { loadReconciliationReport } from "@/app/reconciliation-actions";
+import { ReconciliationCandidates } from "@/components/reconciliation/reconciliation-candidates";
 import { UNIVERSE_LABELS } from "@/lib/reconciliation-types";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +39,7 @@ export default async function ReconciliationPage() {
   return (
     <AppShell title="Reconciliation">
       <div className="space-y-4">
+        <ReconciliationCandidates />
         <Card>
           <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 space-y-0">
             <div>

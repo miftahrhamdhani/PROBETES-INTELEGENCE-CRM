@@ -178,12 +178,15 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
             </div>
             {activeFilters.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
+                {/* `next/link`, BUKAN <a>: <a> memicu full page reload — seluruh
+                    app shell, bundle, dan sesi dimuat ulang hanya untuk membuang
+                    satu filter. */}
                 {activeFilters.map((f) => (
-                  <a key={f.label} href={f.clearHref}>
+                  <Link key={f.label} href={f.clearHref} scroll={false}>
                     <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
                       {f.label} ✕
                     </Badge>
-                  </a>
+                  </Link>
                 ))}
               </div>
             ) : null}

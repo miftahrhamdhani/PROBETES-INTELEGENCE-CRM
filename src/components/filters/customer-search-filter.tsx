@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { PendingIndicator } from "@/components/ui/pending-indicator";
 import { CLUSTER_LABELS, NON_CLUSTER_LABELS } from "@/lib/cluster-codes";
 import { MEMBERSHIP_STATUSES, MEMBERSHIP_STATUS_LABELS } from "@/lib/membership-contracts";
 
@@ -41,6 +42,7 @@ export function CustomerSearchFilter({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = React.useTransition();
 
   const [search, setSearch] = React.useState(searchParams.get("search") ?? "");
 
@@ -48,12 +50,17 @@ export function CustomerSearchFilter({
     setSearch(searchParams.get("search") ?? "");
   }, [searchParams]);
 
+  // `startTransition`: tanpa ini, setiap filter berganti memicu `loading.tsx`
+  // yang mengganti seluruh tabel dengan skeleton — padahal baris yang sedang
+  // tampil masih valid untuk dilihat sampai hasil filter baru siap.
   function updateParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
     params.delete("page");
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   React.useEffect(() => {
@@ -129,6 +136,7 @@ export function CustomerSearchFilter({
           </option>
         ))}
       </select>
+      <PendingIndicator show={isPending} />
     </div>
   );
 }

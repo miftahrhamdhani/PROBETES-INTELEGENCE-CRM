@@ -453,3 +453,30 @@ baris invalid/phone kosong tetap tidak dapat menghasilkan task. Unique index par
 **10 dari 18 pertanyaan sudah terjawab/dikonfirmasi atau diputuskan** dari kode
 sumber legacy, analisis data, atau keputusan pemilik proses. Q15/Q16 tidak memblokir
 V1, tetapi wajib tetap terlihat sebagai residual rekonsiliasi.
+
+---
+
+## Q19 — Review Reconciliation tidak punya UI (ditemukan saat audit performa/QA)
+
+**Status:** ✅ SELESAI — UI review sudah dipasang di `/reconciliation` (audit menyeluruh).
+
+`reconcileImportCandidates()` dipanggil orchestrator setiap import Database All dan
+terus **membuat** baris `crm_reconciliations` berstatus `MATCH_CANDIDATE`. Backend
+untuk meninjaunya (`listReconciliationCandidates()` / `reviewReconciliation()` di
+`src/server/workspace/reconciliation.ts`) lengkap dan berfungsi, tetapi komponen
+review-nya (`reconciliation-review.tsx`) tidak pernah dirender halaman aktif mana
+pun — jadi antrean kandidat bertambah tanpa ada cara meninjaunya dari aplikasi.
+
+Komponen yatim itu dihapus pada audit dead code; **fungsi backend-nya sengaja
+dipertahankan** karena menghapusnya berarti membuang satu-satunya implementasi
+review yang ada.
+
+**Penyelesaian:** komponen `ReconciliationCandidates` dipasang di halaman
+`/reconciliation` (role ADMIN + MANAGEMENT, sama dengan halamannya). Reviewer
+dapat melihat kandidat, mengisi alasan wajib, lalu memilih **Cocokkan** atau
+**Tolak**; keputusan tercatat di `crm_audit_logs` dan hanya bisa diterapkan
+sekali (server menolak kandidat yang statusnya sudah bukan `MATCH_CANDIDATE`).
+
+**Catatan:** saat audit, `crm_reconciliations` berisi 0 baris dan `crm_reports`
+0 baris — jadi layar ini praktis menampilkan empty state sampai ada laporan
+manual CRM yang dibuat. Fungsinya sebagai jaring pengaman, bukan backlog aktif.

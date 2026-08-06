@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadFrequencyAnalytics } from "@/app/analytics-actions";
 import { AppShell } from "@/components/layout/app-shell";
-import { FrequencyBarChart } from "@/components/charts/overview-charts";
+import { FrequencyBarChart } from "@/components/charts/lazy-charts";
 import { FrequencyFunnel } from "@/components/analytics/frequency-funnel";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

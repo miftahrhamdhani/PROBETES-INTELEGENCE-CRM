@@ -7,6 +7,7 @@ import type { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PendingIndicator } from "@/components/ui/pending-indicator";
 import { cn } from "@/lib/utils";
 
 function toKey(date: Date): string {
@@ -67,6 +68,7 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
   const router = useRouter();
   const searchParams = useSearchParams();
   const [open, setOpen] = React.useState(false);
+  const [navPending, startNavTransition] = React.useTransition();
   const presets = React.useMemo(buildPresets, []);
 
   const urlFrom = searchParams.get(paramFrom);
@@ -104,7 +106,11 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
       params.delete(paramTo);
     }
     params.delete("page");
-    router.push(`?${params.toString()}`, { scroll: false });
+    // startTransition: jangan biarkan `loading.tsx` mengganti seluruh tabel
+    // saat rentang tanggal berubah — data lama tetap valid sampai data baru siap.
+    startNavTransition(() => {
+      router.push(`?${params.toString()}`, { scroll: false });
+    });
     setOpen(false);
   }
 
@@ -113,6 +119,7 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
     : "Pilih rentang tanggal";
 
   return (
+    <div className="flex items-center gap-2">
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
@@ -174,5 +181,7 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
         </div>
       </PopoverContent>
     </Popover>
+    <PendingIndicator show={navPending} />
+    </div>
   );
 }

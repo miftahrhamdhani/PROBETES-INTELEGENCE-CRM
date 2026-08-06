@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Secret scanning berjalan PALING AWAL — gagal cepat sebelum langkah lain
+      # sempat memakai kredensial apa pun yang mungkin ter-commit tidak sengaja.
+      - name: Secret scan
+        run: npm run scan:secrets
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit & integration test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Placeholder — build produksi butuh AUTH_SECRET/DATABASE_URL TERSET
+          # (fail-fast, lihat src/server/auth/config.ts & src/server/db/client.ts)
+          # tapi CI tidak pernah tersambung ke Neon sungguhan; nilai di sini
+          # HANYA supaya proses build tidak exit sebelum sempat mengecek
+          # TypeScript/route generation. TIDAK PERNAH dipakai untuk query nyata.
+          AUTH_SECRET: ci-placeholder-not-a-real-secret-000000000000
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci_placeholder_unused

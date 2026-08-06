@@ -1,8 +1,24 @@
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
-import { FadeInItem, FadeInStagger } from "@/components/motion/fade-in";
 import { cn } from "@/lib/utils";
 import type { MembershipSummary } from "@/lib/customer-types";
+
+/**
+ * SENGAJA tidak memakai FadeInStagger/FadeInItem (framer-motion) di sini.
+ *
+ * Ditemukan saat audit: kombinasi motion.div (stagger entrance) di komponen
+ * ini + navigasi client same-pathname-beda-query (klik badge "hapus filter"
+ * di /groups?membershipStatus=X -> /groups?) membuat Next.js App Router GAGAL
+ * commit navigasi SECARA DIAM-DIAM — request RSC terkirim dan sukses (200),
+ * tapi URL/UI tidak pernah berpindah, tanpa error di console/pageerror sama
+ * sekali. Dibuktikan dengan menghapus wrapper motion di komponen INI SAJA
+ * (tanpa mengubah apa pun di /groups atau file lain) -> navigasi langsung
+ * normal kembali. Root cause persisnya di dalam framer-motion/React
+ * transition, di luar kendali kode ini — cara amannya adalah tidak memakai
+ * motion.div beranimasi pada elemen yang menaungi Link untuk navigasi
+ * same-pathname. Regresi: e2e/app-wide-navigation.spec.ts
+ * "membuang filter di Group Membership tidak memicu full page reload".
+ */
 
 const toneClasses = {
   green: "border-green-400 bg-green-100 dark:border-green-700 dark:bg-green-950/40",
@@ -64,9 +80,9 @@ export function GroupMembershipSummary({ summary }: { summary: MembershipSummary
   ];
 
   return (
-    <FadeInStagger className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Ringkasan status membership">
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Ringkasan status membership">
       {tiles.map((tile) => (
-        <FadeInItem key={tile.key}>
+        <div key={tile.key}>
           <Link href={tile.href}>
             <Card className={cn("h-full transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.98] active:translate-y-0", toneClasses[tile.tone])}>
               <CardContent className="p-3">
@@ -76,8 +92,8 @@ export function GroupMembershipSummary({ summary }: { summary: MembershipSummary
               </CardContent>
             </Card>
           </Link>
-        </FadeInItem>
+        </div>
       ))}
-    </FadeInStagger>
+    </div>
   );
 }

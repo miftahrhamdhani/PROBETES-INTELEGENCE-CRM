@@ -78,15 +78,17 @@ describe("Workspace service — invariant DB dan concurrency", () => {
   it("completeTask menolak laporan beda customer/arsip/tertutup lalu rollback task", async () => {
     queryMock
       .mockResolvedValueOnce({ rows: [{ status: "IN_PROGRESS", customer_id: 10 }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [] }) // lookup crm_reconciliations RECONCILED
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE crm_reports gagal (0 baris)
 
     await expect(
       completeTask(1, { outcome: "CLOSING", linkedReportId: 22 }, 7)
     ).rejects.toBeInstanceOf(InvalidTransitionError);
-    expect(String(queryMock.mock.calls[1]?.[0])).toContain("customer_id = $3");
-    expect(String(queryMock.mock.calls[1]?.[0])).toContain("archived_at IS NULL");
-    expect(String(queryMock.mock.calls[1]?.[0])).toContain("RETURNING id");
-    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(String(queryMock.mock.calls[1]?.[0])).toContain("crm_reconciliations");
+    expect(String(queryMock.mock.calls[2]?.[0])).toContain("customer_id = $3");
+    expect(String(queryMock.mock.calls[2]?.[0])).toContain("archived_at IS NULL");
+    expect(String(queryMock.mock.calls[2]?.[0])).toContain("RETURNING id");
+    expect(queryMock).toHaveBeenCalledTimes(3);
   });
 
   it("confirm JOINED_GROUP wajib task DONE + JOINED_GROUP dan row lock", async () => {

@@ -3,11 +3,12 @@ import { importBatchSchema } from "@/lib/import-contracts";
 import { authErrorStatus, requireRole } from "@/server/auth/guards";
 import { revalidateAnalytics } from "@/server/analytics/cache";
 import { commitDatabaseAllImport, ImportBusyError } from "@/server/import";
+import { withTiming } from "@/server/monitoring/with-timing";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
+export const POST = withTiming("/api/import/commit", async (request) => {
   try {
     await requireRole("ADMIN");
     const { batchId } = importBatchSchema.parse(await request.json());
@@ -22,6 +23,6 @@ export async function POST(request: Request) {
       { status: authErrorStatus(error) ?? (error instanceof ImportBusyError ? 409 : 400) }
     );
   }
-}
+});
 
 function message(error: unknown) { return error instanceof Error ? error.message : "Request tidak valid"; }

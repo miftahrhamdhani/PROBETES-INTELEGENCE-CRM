@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { roleHasCrmPermission, type CrmPermission } from "@/lib/crm-permissions";
 import { canAccessPath, type UserRole } from "@/lib/roles";
 import { isUserActive } from "./admin";
 import { auth } from "./index";
@@ -17,7 +18,7 @@ export class ForbiddenError extends Error {
   }
 }
 
-export type SessionUser = { id: string; email: string; name: string; role: UserRole };
+export type SessionUser = { id: string; email: string; name: string; role: UserRole; mustChangePassword: boolean };
 
 /**
  * Sesi memakai JWT (maxAge 12 jam), jadi menonaktifkan user di halaman Users
@@ -46,6 +47,7 @@ export async function requireSession(): Promise<SessionUser> {
     email: user.email ?? "",
     name: user.name ?? "",
     role: user.role,
+    mustChangePassword: user.mustChangePassword ?? false,
   };
 }
 
@@ -60,6 +62,12 @@ export async function requireRole(...allowed: UserRole[]): Promise<SessionUser> 
 export async function requirePathAccess(pathname: string): Promise<SessionUser> {
   const user = await requireSession();
   if (!canAccessPath(user.role, pathname)) throw new ForbiddenError();
+  return user;
+}
+
+export async function requireCrmPermission(permission: CrmPermission): Promise<SessionUser> {
+  const user = await requireSession();
+  if (!roleHasCrmPermission(user.role, permission)) throw new ForbiddenError(`Permission ${permission} diperlukan`);
   return user;
 }
 

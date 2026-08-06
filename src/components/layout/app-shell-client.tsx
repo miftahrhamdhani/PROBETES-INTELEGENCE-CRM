@@ -3,10 +3,26 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { PageTransition } from "@/components/motion/page-transition";
 import type { ActiveDatasetInfo } from "@/lib/dataset-types";
+import type { UserRole } from "@/lib/roles";
 import { AppSidebar, SIDEBAR_OPEN_KEY } from "./app-sidebar";
 import { GlobalHeader } from "./global-header";
 
-export function AppShellClient({ title, children, dataset }: { title: string; children: ReactNode; dataset: ActiveDatasetInfo }) {
+/** Role+nama sudah dipastikan valid oleh middleware/guard server sebelum halaman
+ *  ini sempat dirender — `null` hanya berarti "sesi belum diketahui" (mis. saat
+ *  error tak terduga), bukan sinyal untuk mencoba menebak akses. */
+export type ShellSessionUser = { name: string; role: UserRole } | null;
+
+export function AppShellClient({
+  title,
+  children,
+  dataset,
+  sessionUser,
+}: {
+  title: string;
+  children: ReactNode;
+  dataset: ActiveDatasetInfo;
+  sessionUser: ShellSessionUser;
+}) {
   // Nilai tersimpan "true"/hilang = expanded, "false" = collapsed — sama makna
   // dengan versi lama (dulu "false" berarti sidebar disembunyikan total,
   // sekarang berarti diciutkan jadi rail ikon). Default expanded di render
@@ -28,9 +44,9 @@ export function AppShellClient({ title, children, dataset }: { title: string; ch
 
   return (
     <div className="min-h-screen">
-      <GlobalHeader />
+      <GlobalHeader sessionUser={sessionUser} />
       <div className="lg:flex">
-        <AppSidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} dataset={dataset} />
+        <AppSidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} dataset={dataset} role={sessionUser?.role} />
         <main className="min-w-0 flex-1 p-4 xl:p-6">
           <div className="mx-auto max-w-[1600px]">
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

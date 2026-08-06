@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { sql } from "drizzle-orm";
 import type { ActiveDatasetInfo, ActiveSourceSummary, DatasetContext } from "@/lib/dataset-types";
+import { cachedAggregate } from "@/server/analytics/cache";
 import { getDb } from "@/server/db/client";
 
 /**
@@ -20,6 +21,16 @@ import { getDb } from "@/server/db/client";
  * "Probetes-only" sesuai docs/02-CLUSTER-RULES.md §3.3. BUKAN NOW().
  */
 const loadDatasetSnapshot = cache(async (): Promise<ActiveDatasetInfo> => {
+  // Lapis kedua di atas memoization per-request: AppShell memanggil ini pada
+  // SETIAP navigasi, dan karena shell dirender setelah page selesai fetch,
+  // biayanya adalah satu round trip Neon (~35ms) yang murni serial di setiap
+  // perpindahan halaman. Isinya (tanggal + 3 boolean, tanpa PII) hanya berubah
+  // saat batch import di-commit/diaktifkan — titik yang sama yang sudah
+  // memanggil revalidateAnalytics(), jadi tidak ada risiko stale tambahan.
+  return cachedAggregate(["dataset-snapshot"], loadDatasetSnapshotUncached)();
+});
+
+const loadDatasetSnapshotUncached = async (): Promise<ActiveDatasetInfo> => {
   const result = await getDb().execute<{
     as_of_date: string | null;
     database_all_active: boolean;
@@ -42,7 +53,7 @@ const loadDatasetSnapshot = cache(async (): Promise<ActiveDatasetInfo> => {
     ksbActive: Boolean(row?.ksb_active),
     groupListActive: Boolean(row?.group_list_active),
   };
-});
+};
 
 export async function getActiveDatasetInfo(): Promise<ActiveDatasetInfo> {
   return loadDatasetSnapshot();

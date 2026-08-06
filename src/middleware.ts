@@ -6,6 +6,8 @@ import { authEdge } from "@/server/auth/edge";
  * Data berisi PII (nama, nomor HP, riwayat transaksi) — seluruh route diproteksi
  * kecuali /login dan /api/auth/*. Lihat docs/04-DESIGN.md §keamanan.
  */
+const CHANGE_PASSWORD_PATH = "/change-password";
+
 export default authEdge((request) => {
   const { pathname, origin, search } = request.nextUrl;
   const role = request.auth?.user?.role;
@@ -17,6 +19,16 @@ export default authEdge((request) => {
     const url = new URL(LOGIN_PATH, origin);
     url.searchParams.set("next", `${pathname}${search}`);
     return NextResponse.redirect(url);
+  }
+
+  // Akun dengan password sementara (docs prompt perbaikan §7) dikunci ke
+  // /change-password sampai user sendiri menggantinya — berlaku sebelum
+  // pengecekan role supaya tidak bisa dilewati lewat halaman lain manapun.
+  if (request.auth?.user?.mustChangePassword && pathname !== CHANGE_PASSWORD_PATH) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Password sementara wajib diganti terlebih dahulu" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, origin));
   }
 
   if (!canAccessPath(role, pathname)) {

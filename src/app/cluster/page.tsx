@@ -20,7 +20,7 @@ import {
 import { loadClusterCustomerList, loadClusterDistribution } from "@/app/customers-actions";
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
-import { ClusterBarChart } from "@/components/charts/overview-charts";
+import { ClusterBarChart } from "@/components/charts/lazy-charts";
 import { BroadcastExportButton } from "@/components/customer/broadcast-export-button";
 import { ClusterCustomerTable } from "@/components/customer/cluster-customer-table";
 import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";

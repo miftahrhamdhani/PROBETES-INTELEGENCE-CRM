@@ -25,8 +25,15 @@ export interface PagedResult<TRow> {
  * pertama itulah yang dipertahankan di sini — batch berikutnya tidak menimpanya.
  *
  * `initialData` (opsional): hasil batch 1 yang sudah di-fetch di server component
- * (SSR) — dipakai untuk seed render pertama supaya tidak ada request client
- * tambahan & tidak ada layout shift saat halaman pertama kali dibuka.
+ * (SSR) — dipakai untuk seed setiap kali `filterKey` berubah DAN `initialData`
+ * baru tersedia, bukan hanya sekali di mount. Pemanggil (mis. CustomerListTable)
+ * SELALU menerima `filter` dari searchParams yang sudah diparse server dan
+ * `initialData` yang cocok dari fetch server yang sama — jadi begitu navigasi
+ * filter selesai, hasilnya SUDAH ada, bukan baru mulai dimuat. Tanpa reseed ini,
+ * setiap perubahan filter/search akan (a) mengosongkan tabel sesaat lalu (b)
+ * menjalankan fetch client KEDUA yang berlebihan untuk data yang server sudah
+ * kirim — dua pelanggaran audit performa sekaligus (empty-state flash +
+ * duplicate request).
  */
 export function useInfiniteRows<TRow, TFilter>(
   fetchPage: (filter: TFilter, page: number) => Promise<PagedResult<TRow>>,
@@ -34,8 +41,7 @@ export function useInfiniteRows<TRow, TFilter>(
   filterKey: string,
   initialData?: PagedResult<TRow>
 ) {
-  const initialFilterKeyRef = React.useRef(filterKey);
-  const seeded = initialData && filterKey === initialFilterKeyRef.current;
+  const seeded = !!initialData;
 
   const [rows, setRows] = React.useState<TRow[]>(seeded ? initialData.rows : []);
   const [total, setTotal] = React.useState(seeded ? initialData.total : 0);
@@ -89,8 +95,11 @@ export function useInfiniteRows<TRow, TFilter>(
       if (seeded) return;
     }
     requestId.current++;
-    const seedNow = initialData && filterKey === initialFilterKeyRef.current;
-    if (seedNow) {
+    // `initialData` (bukan cocok-tidaknya dengan key yang tercatat di MOUNT)
+    // adalah penentu: setiap kali pemanggil mengirim initialData baru untuk
+    // filterKey saat ini, itu berarti server SUDAH selesai fetch — reseed
+    // langsung, jangan kosongkan tabel lalu fetch ulang dari client.
+    if (initialData) {
       setRows(initialData.rows);
       setTotal(initialData.total);
       setPage(initialData.page);

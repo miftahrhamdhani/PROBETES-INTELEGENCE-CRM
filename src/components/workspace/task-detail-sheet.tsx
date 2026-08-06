@@ -296,6 +296,15 @@ function StatusActions({ detail, onChanged }: { detail: WorkspaceTaskDetail; onC
         {detail.outcome === "JOINED_GROUP" && detail.membershipStatus !== "GROUPED" ? (
           <JoinedGroupConfirm taskId={detail.id} onChanged={onChanged} />
         ) : null}
+        {detail.outcome === "CLOSING" ? (
+          <Button size="sm" variant="outline" className="mt-2 w-full" asChild>
+            <Link
+              href={`/workspace/pesanan/baru?taskId=${detail.id}&customerName=${encodeURIComponent(detail.customerName)}&phone=${encodeURIComponent(detail.customerPhone)}`}
+            >
+              Buat Pesanan dari Closing ini →
+            </Link>
+          </Button>
+        ) : null}
       </section>
     );
   }

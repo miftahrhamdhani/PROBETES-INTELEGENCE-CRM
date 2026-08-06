@@ -10,6 +10,9 @@ export const LOGIN_PATH = "/login";
 
 /** Route -> role yang boleh mengakses. Path diurut dari yang paling spesifik. */
 const ROUTE_ACCESS: ReadonlyArray<{ prefix: string; roles: readonly UserRole[] }> = [
+  /** Semua role login boleh mengganti password sendiri — termasuk saat
+   *  mustChangePassword memaksa redirect ke sini (docs prompt perbaikan §7). */
+  { prefix: "/change-password", roles: ["ADMIN", "CRM", "MANAGEMENT"] },
   { prefix: "/cohort", roles: ["ADMIN", "CRM", "MANAGEMENT"] },
   { prefix: "/frequency", roles: ["ADMIN", "CRM", "MANAGEMENT"] },
   { prefix: "/rfm", roles: ["ADMIN", "CRM", "MANAGEMENT"] },
@@ -27,7 +30,15 @@ const ROUTE_ACCESS: ReadonlyArray<{ prefix: string; roles: readonly UserRole[] }
   { prefix: "/api/import", roles: ["ADMIN"] },
   /** Export daftar broadcast (FR-24) — sama dengan hak akses /customers. */
   { prefix: "/api/customers", roles: ["ADMIN", "CRM"] },
-  { prefix: "/api/crm-reports", roles: ["ADMIN", "CRM"] },
+  /**
+   * Diselaraskan dengan `/workspace` (page-level, di atas) dan dengan
+   * `roleHasCrmPermission()` di crm-permissions.ts — MANAGEMENT tidak pernah
+   * punya SATU PUN permission domain CRM (PII customer, transaksi), jadi
+   * mengizinkannya lolos middleware hanya untuk ditolak lagi oleh
+   * requireCrmPermission() di tiap route handler adalah inkonsistensi murni,
+   * bukan celah aktif — audit performa/QA §O.
+   */
+  { prefix: "/api/workspace", roles: ["ADMIN", "CRM"] },
 ];
 
 /** Dashboard: semua role. */

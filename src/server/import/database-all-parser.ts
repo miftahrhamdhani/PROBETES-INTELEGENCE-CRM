@@ -4,6 +4,7 @@ import { normalizePhone } from "../normalize/phone";
 import { classifyProduct, type ProductAliasOverlay } from "../normalize/product-catalog";
 import { cleanText, normalizeForMatching } from "../normalize/text";
 import { buildKsbTransactionKey } from "./ksb-parser";
+import { classifyCrmTransaction, normalizeTransactionStatus } from "../workspace/classification";
 import { hasColumn, sourceValue as value } from "./source-row";
 import type {
   DatabaseAllParseResult,
@@ -73,6 +74,17 @@ export function parseDatabaseAll(
     if (!externalId) codes.push("MISSING_ORDER_ID");
 
     const amount = normalizeAmount(value(row, "Nilai Produk"));
+    const shippingCost = normalizeAmount(value(row, "Ongkir"));
+    const packingCost = normalizeAmount(value(row, "Packing"));
+    const discount = normalizeAmount(value(row, "DiskonOngkir"));
+    const adminCod = normalizeAmount(value(row, "Fee Cod"));
+    const crmMarketingCost = normalizeAmount(value(row, "BiayaMarketingCRM"));
+    const workspaceTotal = normalizeAmount(value(row, "Total Bayar"));
+    const classification = classifyCrmTransaction({
+      division: value(row, "DIVISI"),
+      platform: value(row, "Platform"),
+    });
+    const transactionStatus = normalizeTransactionStatus(value(row, "Status"));
     const qtyRaw = value(row, "Qty 1");
     const qty = qtyRaw === null || qtyRaw === undefined || qtyRaw === "" ? null : cleanText(qtyRaw);
     const isBonus = /BONUS/i.test(rawProductName) && amount === 0n;
@@ -126,6 +138,12 @@ export function parseDatabaseAll(
     if (current) {
       current.items.push(item);
       current.orderTotal += productFlags.isKsbProduct ? 0n : amount;
+      current.workspaceTotal = current.workspaceTotal > 0n ? current.workspaceTotal : workspaceTotal;
+      current.shippingCost = current.shippingCost > 0n ? current.shippingCost : shippingCost;
+      current.packingCost = current.packingCost > 0n ? current.packingCost : packingCost;
+      current.discount = current.discount > 0n ? current.discount : discount;
+      current.adminCod = current.adminCod > 0n ? current.adminCod : adminCod;
+      current.crmMarketingCost = current.crmMarketingCost > 0n ? current.crmMarketingCost : crmMarketingCost;
     } else {
       grouped.set(sourceOrderKey, {
         sourceOrderKey,
@@ -134,12 +152,24 @@ export function parseDatabaseAll(
         customerName,
         orderDate: dateResult.date,
         orderTotal: productFlags.isKsbProduct ? 0n : amount,
+        workspaceTotal,
         platform: normalizeForMatching(value(row, "Platform")),
         division: normalizeForMatching(value(row, "DIVISI")),
         paymentMethod: normalizeForMatching(value(row, "pembayaran")),
         partner: normalizeForMatching(value(row, "Mitra")),
         csName: normalizeForMatching(value(row, "CS")),
         memo: normalizeForMatching(value(row, "Memo")),
+        city: normalizeForMatching(value(row, "Kota/Kabupaten")),
+        hub: normalizeForMatching(value(row, "HUB")),
+        salesType: normalizeForMatching(value(row, "Memo")),
+        shippingCost,
+        packingCost,
+        discount,
+        adminCod,
+        crmMarketingCost,
+        orderClosingCount: 1,
+        transactionStatus,
+        crmClassification: classification,
         items: [item],
       });
     }

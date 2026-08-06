@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { loadImportHistory } from "@/app/import-admin-actions";
 import { AppShell } from "@/components/layout/app-shell";
-import { Pagination } from "@/components/customer/pagination";
+import { Pagination } from "@/components/ui/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -13,6 +13,8 @@ export default async function ImportHistoryPage({ searchParams }: { searchParams
   const params = await searchParams;
   const page = Math.max(Number(params.page ?? "1") || 1, 1);
   const result = await loadImportHistory(page);
+  const totalPages = Math.max(Math.ceil(result.total / result.perPage), 1);
+  const currentPage = Math.min(result.page, totalPages);
 
   return (
     <AppShell title="Import History">
@@ -52,7 +54,14 @@ export default async function ImportHistoryPage({ searchParams }: { searchParams
               </table>
             </div>
           ) : <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">Belum ada import.</p>}
-          <Pagination page={result.page} perPage={result.perPage} total={result.total} hrefForPage={(target) => `/history?page=${target}`} />
+          <Pagination
+            page={result.page}
+            perPage={result.perPage}
+            total={result.total}
+            prevHref={currentPage > 1 ? `/history?page=${currentPage - 1}` : null}
+            nextHref={currentPage < totalPages ? `/history?page=${currentPage + 1}` : null}
+            label="import"
+          />
         </CardContent>
       </Card>
     </AppShell>

@@ -405,9 +405,15 @@ export async function setTaskStatus(
          assigned_to = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_to END,
          assigned_by = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_by END,
          assigned_at = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_at END,
+         first_activity_at = CASE WHEN $2 = 'IN_PROGRESS' THEN COALESCE(first_activity_at, now()) ELSE first_activity_at END,
          updated_at = now()
        WHERE id = $1`,
       [taskId, status]
+    );
+    await client.query(
+      `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
+       VALUES ($1, 'STATUS_CHANGED', jsonb_build_object('from', $2, 'to', $3), $4)`,
+      [taskId, row.status, status, actorUserId]
     );
     await insertHistory(client, taskId, row.status, status, actorUserId, note);
   });
@@ -478,7 +484,14 @@ export async function completeTask(
       throw new InvalidTransitionError(`Task berstatus ${row.status} tidak bisa diselesaikan`);
     }
 
+    let officialOrderId: number | null = null;
     if (input.linkedReportId) {
+      const official = await client.query<{ official_order_id: number }>(
+        `SELECT official_order_id::int FROM crm_reconciliations
+         WHERE manual_report_id = $1 AND status = 'RECONCILED' LIMIT 1`,
+        [input.linkedReportId]
+      );
+      officialOrderId = official.rows[0]?.official_order_id ?? null;
       const linked = await client.query<{ id: number }>(
         `UPDATE crm_reports SET task_id = $2, updated_at = now()
          WHERE id = $1 AND customer_id = $3 AND archived_at IS NULL AND task_id IS NULL
@@ -492,10 +505,16 @@ export async function completeTask(
 
     await client.query(
       `UPDATE crm_tasks SET
-         status = 'DONE', outcome = $2, notes = COALESCE($3, notes),
+         status = 'DONE', outcome = $2, notes = COALESCE($3, notes), official_order_id = COALESCE($5, official_order_id),
+         first_activity_at = COALESCE(first_activity_at, now()),
          completed_at = now(), completed_by = $4, updated_at = now()
        WHERE id = $1`,
-      [taskId, input.outcome, input.notes ?? null, actorUserId]
+      [taskId, input.outcome, input.notes ?? null, actorUserId, officialOrderId]
+    );
+    await client.query(
+      `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
+       VALUES ($1, 'OUTCOME_RECORDED', jsonb_build_object('outcome', $2, 'officialOrderId', $3), $4)`,
+      [taskId, input.outcome, officialOrderId, actorUserId]
     );
     await insertHistory(client, taskId, row.status, "DONE", actorUserId, `Outcome: ${input.outcome}`);
   });

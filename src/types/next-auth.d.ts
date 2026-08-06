@@ -3,6 +3,7 @@ import type { UserRole } from "@/lib/roles";
 declare module "next-auth" {
   interface User {
     role?: UserRole;
+    mustChangePassword?: boolean;
   }
 
   interface Session {
@@ -11,6 +12,7 @@ declare module "next-auth" {
       email?: string | null;
       name?: string | null;
       role?: UserRole;
+      mustChangePassword?: boolean;
     };
   }
 }
@@ -18,5 +20,6 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: UserRole;
+    mustChangePassword?: boolean;
   }
 }

@@ -13,6 +13,14 @@ const credentialsSchema = z.object({
 /**
  * Instance penuh (Node runtime): credentials + lookup Neon.
  * Tanpa registrasi publik — user dibuat admin lewat `npm run db:seed:admin`.
+ *
+ * SENGAJA tidak ada password/akun bypass hardcoded apa pun (docs prompt
+ * perbaikan §7) — versi sebelumnya sempat punya "emergency admin fallback"
+ * dan magic password universal yang aktif untuk SETIAP akun aktif; itu
+ * backdoor otentikasi, bukan fitur resilience, dan sudah dihapus total.
+ * Root cause asli (koneksi Neon serverless) sudah diperbaiki di commit
+ * "sanitize DATABASE_URL query parameters" — kegagalan DB sekarang berarti
+ * login gagal, bukan diam-diam menerima password apa pun.
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -26,32 +34,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const emailInput = parsed.data.email.trim().toLowerCase();
         const passInput = parsed.data.password;
 
+        let user: Awaited<ReturnType<typeof findUserByEmail>>;
         try {
-          const user = await findUserByEmail(emailInput);
-          if (user && user.active) {
-            let ok = await verifyPassword(passInput, user.passwordHash);
-            if (!ok && (passInput === "admin123" || passInput === "admin12345")) {
-              ok = true;
-            }
-            if (ok) {
-              return { id: String(user.id), email: user.email, name: user.name, role: user.role };
-            }
-          }
+          user = await findUserByEmail(emailInput);
         } catch (err) {
           console.error("Auth DB Error:", err);
+          throw err;
         }
-
-        // Emergency admin fallback jika koneksi DB bermasalah di Vercel
-        if (
-          (emailInput === "updmdata01@gmail.com" || emailInput === "admin@probetes.id") &&
-          (passInput === "admin123" || passInput === "admin12345")
-        ) {
-          return { id: "1", email: emailInput, name: "Admin PROBETES", role: "ADMIN" };
-        }
-
-        return null;
+        if (!user || !user.active) return null;
+        const ok = await verifyPassword(passInput, user.passwordHash);
+        if (!ok) return null;
+        return { id: String(user.id), email: user.email, name: user.name, role: user.role, mustChangePassword: user.mustChangePassword };
       },
-
     }),
   ],
 });

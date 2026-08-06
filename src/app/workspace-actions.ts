@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { requireRole } from "@/server/auth/guards";
 import { revalidateAnalytics } from "@/server/analytics/cache";
-import { listReportsForCustomer } from "@/server/crm-report/service";
+import { listReportsForCustomer } from "@/server/workspace/customer-reports";
 import { getWorkspaceOverview, listAssignableCrmUsers } from "@/server/workspace/overview";
 import {
   assignTask,

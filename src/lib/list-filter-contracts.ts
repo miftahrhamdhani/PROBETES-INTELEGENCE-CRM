@@ -48,24 +48,6 @@ export const customerListFilterSchema = z.object({
 });
 export type CustomerListFilterInput = z.infer<typeof customerListFilterSchema>;
 
-export const crmReportListFilterSchema = z.object({
-  search: shortText.optional(),
-  csName: shortText.optional(),
-  platform: shortText.optional(),
-  division: shortText.optional(),
-  salesType: shortText.optional(),
-  dateFrom: isoDate.optional(),
-  dateTo: isoDate.optional(),
-  includeArchived: z.coerce.boolean().optional(),
-  pic: z.coerce.number().int().positive().optional(),
-  taskType: z.enum(CRM_TASK_TYPES).optional(),
-  taskStatus: z.enum(CRM_TASK_STATUSES).optional(),
-  outcome: z.enum(CRM_TASK_OUTCOMES).optional(),
-  page: positiveInt.optional(),
-  perPage: positiveInt.max(200).optional(),
-  cursor: z.string().trim().max(120).optional(),
-});
-
 export const workspaceTaskListFilterSchema = z.object({
   search: shortText.optional(),
   pic: z.union([z.coerce.number().int().positive(), z.literal("UNASSIGNED")]).optional(),

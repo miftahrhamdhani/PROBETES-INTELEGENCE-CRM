@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ProductMappingManager } from "@/components/mapping/product-mapping-manager";
+import { ProductHppManager } from "@/components/mapping/product-hpp-manager";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   loadApprovedAliases,
@@ -40,6 +41,7 @@ export default async function ProductMappingPage() {
     <AppShell title="Product Mapping">
       <div className="space-y-4">
         <ProductMappingManager initialData={unknown} products={products} />
+        <ProductHppManager products={products} />
 
         <Card>
           <CardHeader>

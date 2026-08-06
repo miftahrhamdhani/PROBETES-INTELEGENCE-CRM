@@ -37,12 +37,29 @@ export interface NormalizedDailyOrder {
   customerName: string;
   orderDate: string;
   orderTotal: bigint;
+  workspaceTotal: bigint;
   platform: string;
   division: string;
   paymentMethod: string;
   partner: string;
   csName: string;
   memo: string;
+  city: string;
+  hub: string;
+  salesType: string;
+  shippingCost: bigint;
+  packingCost: bigint;
+  discount: bigint;
+  adminCod: bigint;
+  crmMarketingCost: bigint;
+  orderClosingCount: number;
+  transactionStatus: "CONFIRMED" | "CANCELLED" | "COD_FAILED" | "RETURNED" | "REFUNDED" | "PARTIALLY_REFUNDED" | "ADJUSTED";
+  crmClassification: {
+    included: boolean;
+    inclusionReason: string | null;
+    exclusionReason: string | null;
+    mappingVersion: string;
+  };
   items: NormalizedOrderItem[];
 }
 

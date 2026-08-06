@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { PendingIndicator } from "@/components/ui/pending-indicator";
 import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import {
   CRM_TASK_OUTCOMES,
@@ -17,11 +18,12 @@ import type { CrmUserOption } from "@/lib/workspace-types";
 import { cn } from "@/lib/utils";
 
 /** Filter Workspace > Pembagian Tugas — semua state di URL query string (bisa
- *  di-bookmark), pola sama dengan CustomerSearchFilter/CrmReportSearchFilter. */
+ *  di-bookmark), pola sama dengan CustomerSearchFilter. */
 export function TaskSearchFilter({ picOptions }: { picOptions: CrmUserOption[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = React.useTransition();
   const [search, setSearch] = React.useState(searchParams.get("search") ?? "");
 
   React.useEffect(() => {
@@ -32,7 +34,9 @@ export function TaskSearchFilter({ picOptions }: { picOptions: CrmUserOption[] }
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(key, value);
     else params.delete(key);
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    });
   }
 
   React.useEffect(() => {
@@ -115,6 +119,7 @@ export function TaskSearchFilter({ picOptions }: { picOptions: CrmUserOption[] }
       >
         Hanya Overdue
       </button>
+      <PendingIndicator show={isPending} />
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { loadRfmAnalytics } from "@/app/analytics-actions";
 import { AppShell } from "@/components/layout/app-shell";
-import { FrequencyBarChart } from "@/components/charts/overview-charts";
-import { RfmBarChart } from "@/components/charts/rfm-charts";
+import { FrequencyBarChart } from "@/components/charts/lazy-charts";
+import { RfmBarChart } from "@/components/charts/lazy-charts";
 import { FadeInItem, FadeInStagger } from "@/components/motion/fade-in";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { RECENCY_BUCKETS, RFM_FREQUENCY_BUCKETS } from "@/lib/analytics-types";

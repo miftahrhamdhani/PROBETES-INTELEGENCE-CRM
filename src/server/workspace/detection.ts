@@ -28,6 +28,10 @@ export async function detectNewCustomersFromBatch(
      SELECT c.id, 'FOLLOW_UP_NEW_CUSTOMER', 'UNASSIGNED', $1, now(), now(), now()
      FROM customers c
      WHERE c.first_seen_batch_id = $1 AND c.name IS NOT NULL AND btrim(c.name) <> ''
+       AND EXISTS (
+         SELECT 1 FROM orders o
+         WHERE o.customer_id = c.id AND o.source_batch_id = $1 AND o.is_crm_transaction = true
+       )
      ON CONFLICT (customer_id) WHERE task_type = 'FOLLOW_UP_NEW_CUSTOMER' DO NOTHING
      RETURNING id`,
     [batchId]

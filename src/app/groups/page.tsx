@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { loadCustomerList, loadMembershipSummary, loadPics } from "@/app/customers-actions";
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
@@ -132,12 +133,13 @@ export default async function GroupMembershipPage({
               </div>
               {activeFilters.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
+                  {/* `next/link`, BUKAN <a>: <a> memicu full page reload. */}
                   {activeFilters.map((f) => (
-                    <a key={f.label} href={f.clearHref}>
+                    <Link key={f.label} href={f.clearHref} scroll={false}>
                       <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
                         {f.label} ✕
                       </Badge>
-                    </a>
+                    </Link>
                   ))}
                 </div>
               ) : null}

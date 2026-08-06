@@ -4,7 +4,7 @@ import { loadDashboardSummary } from "@/app/analytics-actions";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CustomerTrendChart, FrequencyBarChart, RevenueTrendChart } from "@/components/charts/overview-charts";
+import { CustomerTrendChart, FrequencyBarChart, RevenueTrendChart } from "@/components/charts/lazy-charts";
 import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { FadeInItem, FadeInStagger } from "@/components/motion/fade-in";
 import { cn } from "@/lib/utils";
