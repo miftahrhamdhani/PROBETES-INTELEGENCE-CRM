@@ -33,34 +33,35 @@ describe("Master Data — exact product seed (docs prompt §5.1)", () => {
     expect(WORKSPACE_PRODUCT_SEED).toHaveLength(26);
   });
 
-  it("Product ID unik dan berurutan PRD-0001..PRD-0026", () => {
+  it("Product ID unik, PRO-0001..PRO-0024 + KSB-0001..KSB-0002 (Yacona/Teacona)", () => {
     const ids = WORKSPACE_PRODUCT_SEED.map((p) => p.productId);
     expect(new Set(ids).size).toBe(26);
-    expect(ids[0]).toBe("PRD-0001");
-    expect(ids[25]).toBe("PRD-0026");
+    expect(ids[0]).toBe("PRO-0001");
+    expect(ids[25]).toBe("PRO-0024");
+    expect(ids.filter((id) => id.startsWith("KSB-"))).toEqual(["KSB-0001", "KSB-0002"]);
   });
 
-  it("PRD-0002 Amandia Muesli sesuai spesifikasi persis", () => {
-    const product = WORKSPACE_PRODUCT_SEED.find((p) => p.productId === "PRD-0002")!;
-    expect(product).toMatchObject({ productName: "Amandia Muesli", sellingPrice: 54000, unitHpp: 32000, productUsage: "SELLABLE" });
+  it("PRO-0002 Amandia Muesli sesuai spesifikasi persis", () => {
+    const product = WORKSPACE_PRODUCT_SEED.find((p) => p.productId === "PRO-0002")!;
+    expect(product).toMatchObject({ productName: "Amandia Muesli", sellingPrice: 54000, unitHpp: 32000, productUsage: "SELLABLE_AND_BONUS" });
   });
 
-  it("PRD-0025 Pro Herbal Dummy adalah BONUS_ONLY, harga jual null (§5.2)", () => {
-    const product = WORKSPACE_PRODUCT_SEED.find((p) => p.productId === "PRD-0025")!;
+  it("PRO-0023 Pro Herbal Dummy adalah BONUS_ONLY, harga jual null (§5.2)", () => {
+    const product = WORKSPACE_PRODUCT_SEED.find((p) => p.productId === "PRO-0023")!;
     expect(product).toMatchObject({ productName: "Pro Herbal Dummy", sellingPrice: null, unitHpp: 14000, productUsage: "BONUS_ONLY" });
   });
 
-  it("semua produk selain PRD-0025 adalah SELLABLE dengan harga jual terisi", () => {
+  it("semua produk selain PRO-0023 adalah SELLABLE_AND_BONUS dengan harga jual terisi (produk apa pun boleh jadi bonus/sampel)", () => {
     for (const product of WORKSPACE_PRODUCT_SEED) {
-      if (product.productId === "PRD-0025") continue;
-      expect(product.productUsage).toBe("SELLABLE");
+      if (product.productId === "PRO-0023") continue;
+      expect(product.productUsage).toBe("SELLABLE_AND_BONUS");
       expect(product.sellingPrice).not.toBeNull();
     }
   });
 });
 
 describe("Product usage gating (docs prompt §5/§6.3.3)", () => {
-  it("PRD-0025 (BONUS_ONLY) tidak pernah bisa dipilih sebagai SALE", () => {
+  it("PRO-0023 (BONUS_ONLY) tidak pernah bisa dipilih sebagai SALE", () => {
     expect(allowedItemTypesForUsage("BONUS_ONLY")).not.toContain("SALE");
     expect(allowedItemTypesForUsage("BONUS_ONLY")).toEqual(["BONUS", "SAMPLE"]);
   });

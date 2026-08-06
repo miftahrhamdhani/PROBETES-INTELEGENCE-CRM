@@ -8,7 +8,7 @@ test.use({ storageState: authStatePath("crm") });
 const TODAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const TEST_PHONE = `0812${String(Date.now()).slice(-8)}`;
 const TEST_CUSTOMER = `E2E TEST ${Date.now()}`;
-const UNIT_PRICE = 54_000; // PRD-0002 Amandia Muesli
+const UNIT_PRICE = 54_000; // PRO-0002 Amandia Muesli
 
 async function kpiValue(page: Page, label: string): Promise<string> {
   const value = await page.getByText(label, { exact: true }).locator("xpath=following-sibling::p[1]").innerText();
@@ -27,7 +27,7 @@ test.describe("Siklus Pesanan — create, confirm, cancel, KPI, filter tanggal",
     const productTrigger = page.getByRole("button", { name: "Pilih produk" }).first();
     await productTrigger.click();
     await page.getByPlaceholder("Cari...").fill("Amandia Muesli");
-    await page.getByRole("button", { name: /PRD-0002.*Amandia Muesli/ }).click();
+    await page.getByRole("button", { name: /PRO-0002.*Amandia Muesli/ }).click();
 
     await page.getByRole("button", { name: "Simpan" }).click();
     await page.waitForURL("**/workspace/pesanan");

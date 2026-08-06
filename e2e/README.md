@@ -40,7 +40,7 @@ akun produksi/asli. Untuk generate:
 | # | Skenario | File |
 |---|---|---|
 | 1-2 | Overview/Pesanan dapat dibuka | navigation.spec.ts |
-| 3-9 | Product combobox, PRD-0025 SALE/BONUS, Admin COD, TOTAL real-time | pesanan-form.spec.ts |
+| 3-9 | Product combobox, PRO-0023 SALE/BONUS, Admin COD, TOTAL real-time | pesanan-form.spec.ts |
 | 10-12 | Create+confirm order, CANCELLED tidak masuk KPI, filter tanggal konsisten Overview/Pesanan | pesanan-lifecycle.spec.ts |
 | 13-16 | Leader/SPV membuat biaya, CRM biasa ditolak, Direktur approval akhir, COM masuk Overview | biaya-operasional.spec.ts |
 | 17-18 | Performa Tim tidak ada di menu, route 404 | navigation.spec.ts |

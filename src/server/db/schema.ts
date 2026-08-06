@@ -933,7 +933,7 @@ export const crmTaskHistory = pgTable(
 
 export const workspacePaymentMethod = pgEnum("workspace_payment_method", ["COD", "TRANSFER"]);
 
-/** Master Data — Product Master Workspace. `productId` (mis. PRD-0001) adalah
+/** Master Data — Product Master Workspace. `productId` (mis. PRO-0001) adalah
  *  business key stabil dipakai lintas modul (Pesanan, import mapping),
  *  terpisah dari `products.code` legacy (dipakai cluster engine). */
 export const workspaceProducts = pgTable(

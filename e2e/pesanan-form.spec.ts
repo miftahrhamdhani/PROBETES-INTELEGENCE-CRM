@@ -36,23 +36,23 @@ test.describe("Form Pesanan — produk, bonus, COD, TOTAL real-time", () => {
     const trigger = page.getByRole("button", { name: "Pilih produk" }).first();
     await trigger.click();
     await page.getByPlaceholder("Cari...").fill("Amandia Muesli");
-    await expect(page.getByRole("button", { name: /PRD-0002.*Amandia Muesli/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /PRO-0002.*Amandia Muesli/ })).toBeVisible();
   });
 
-  test("PRD-0025 (Pro Herbal Dummy) tidak dapat dipilih sebagai SALE", async ({ page }) => {
+  test("PRO-0023 (Pro Herbal Dummy) tidak dapat dipilih sebagai SALE", async ({ page }) => {
     const trigger = page.getByRole("button", { name: "Pilih produk" }).first();
     await trigger.click();
     await page.getByPlaceholder("Cari...").fill("Pro Herbal Dummy");
     await expect(page.getByText("Tidak ditemukan.")).toBeVisible();
   });
 
-  test("PRD-0025 dapat dipilih sebagai BONUS, harga Rp0, HPP masuk COS", async ({ page }) => {
+  test("PRO-0023 dapat dipilih sebagai BONUS, harga Rp0, HPP masuk COS", async ({ page }) => {
     await page.getByRole("button", { name: "Tambah Bonus/Sampel" }).click();
     const bonusRow = itemRow(page, 1);
     await bonusRow.locator("button").first().click();
     await page.getByPlaceholder("Cari...").fill("Pro Herbal Dummy");
-    await page.getByRole("button", { name: /PRD-0025.*Pro Herbal Dummy/ }).click();
-    await expect(bonusRow.locator("button").first()).toContainText("PRD-0025");
+    await page.getByRole("button", { name: /PRO-0023.*Pro Herbal Dummy/ }).click();
+    await expect(bonusRow.locator("button").first()).toContainText("PRO-0023");
 
     // Nilai bonus row = Rp 0 (kolom "Nilai" pada baris item ini).
     await expect(bonusRow).toContainText("Rp 0");
@@ -83,7 +83,7 @@ test.describe("Form Pesanan — produk, bonus, COD, TOTAL real-time", () => {
     const trigger = page.getByRole("button", { name: "Pilih produk" }).first();
     await trigger.click();
     await page.getByPlaceholder("Cari...").fill("Amandia Muesli");
-    await page.getByRole("button", { name: /PRD-0002.*Amandia Muesli/ }).click();
+    await page.getByRole("button", { name: /PRO-0002.*Amandia Muesli/ }).click();
 
     const totalRow = summaryRow(page, "TOTAL");
     await expect(totalRow).toContainText("Rp 54.000");

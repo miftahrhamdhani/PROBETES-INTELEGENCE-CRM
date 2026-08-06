@@ -40,6 +40,22 @@ export default async function ProductMappingPage() {
   return (
     <AppShell title="Product Mapping">
       <div className="space-y-4">
+        <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-4 text-xs dark:border-amber-800 dark:bg-amber-950">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">Halaman ini bekerja di atas database lama (Database All / `orders`), bukan Workspace CRM</p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            Mapping di sini menormalkan nama produk mentah hasil import Database All menjadi produk canonical — masih
+            aktif dipakai oleh <strong>Cluster A1–F</strong> (kategori &quot;produk fisik target&quot; di aturan cluster
+            bergantung langsung ke nama canonical ini), <strong>RFM</strong> (Total Order mengecualikan item Yacona),
+            <strong> Cohort</strong>, <strong>Retention</strong>, dan <strong>Frequency</strong>. Bukan fitur mati,
+            jangan diabaikan.
+          </p>
+          <p className="mt-1 text-amber-800 dark:text-amber-300">
+            Terpisah total dari Master Data Workspace CRM (Pesanan, Product ID <code>PRO-</code>/<code>KSB-</code>) —
+            pesanan di Workspace CRM sudah menunjuk produk asli langsung, tidak butuh mapping nama mentah seperti ini.
+            Saat Cohort (dan analitik lain di atas) dipindah untuk membaca dari database Workspace, halaman ini akan
+            ditinjau ulang — belum terjadi sampai ada pengumuman eksplisit.
+          </p>
+        </div>
         <ProductMappingManager initialData={unknown} products={products} />
         <ProductHppManager products={products} />
 

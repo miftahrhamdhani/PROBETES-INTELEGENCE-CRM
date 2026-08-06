@@ -23,6 +23,7 @@
     "workspace:seed-products": "tsx --env-file=.env scripts/seed-workspace-products.ts",
     "workspace:seed-crm-team": "tsx --env-file=.env scripts/seed-crm-team.ts",
     "workspace:cutover": "tsx --env-file=.env scripts/init-workspace-cutover.ts",
+    "workspace:purge-dummy": "tsx --env-file=.env scripts/purge-workspace-dummy.ts",
     "import:legacy-ksb": "tsx --env-file=.env scripts/import-legacy-ksb.ts",
     "import:legacy-group-membership": "tsx --env-file=.env scripts/import-legacy-group-membership.ts",
     "validate:legacy": "tsx scripts/validate-against-file.ts",
