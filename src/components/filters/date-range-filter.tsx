@@ -84,16 +84,24 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  /**
+   * Satu kalender, dua klik — perilaku IDENTIK dengan WorkspaceDateRangePicker
+   * (src/components/ui/date-range-picker.tsx) supaya rentang tanggal terasa
+   * sama di seluruh aplikasi: klik 1× = tanggal awal, klik 1× lagi = rentang
+   * lengkap dan langsung diterapkan, klik tanggal yang sama = rentang satu hari.
+   */
   function handleDayClick(date: Date) {
-    setPending((current) => {
-      if (!current?.from || current.to) {
-        return { from: date, to: undefined };
-      }
-      if (isSameDay(date, current.from)) {
-        return { from: date, to: date };
-      }
-      return date < current.from ? { from: date, to: current.from } : { from: current.from, to: date };
-    });
+    if (!pending?.from || pending.to) {
+      setPending({ from: date, to: undefined });
+      return;
+    }
+    const next: DateRange = isSameDay(date, pending.from)
+      ? { from: date, to: date }
+      : date < pending.from
+        ? { from: date, to: pending.from }
+        : { from: pending.from, to: date };
+    setPending(next);
+    applyAndClose(next);
   }
 
   function applyAndClose(range: DateRange | undefined) {
@@ -163,19 +171,24 @@ export function DateRangeFilter({ paramFrom = "from", paramTo = "to" }: { paramF
               defaultMonth={pending?.from ?? new Date()}
             />
             <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-              <button
-                type="button"
-                className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  setPending(undefined);
-                  applyAndClose(undefined);
-                }}
-              >
-                Reset
-              </button>
-              <Button size="sm" onClick={() => applyAndClose(pending)} disabled={!pending?.from}>
-                Terapkan
-              </Button>
+              <span className="text-[11px] text-muted-foreground">
+                {pending?.from && !pending.to ? "Pilih tanggal akhir, atau Terapkan untuk satu hari" : "Klik tanggal awal"}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="rounded-sm px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => {
+                    setPending(undefined);
+                    applyAndClose(undefined);
+                  }}
+                >
+                  Reset
+                </button>
+                <Button size="sm" className="h-7 text-[11px]" onClick={() => applyAndClose(pending)} disabled={!pending?.from}>
+                  Terapkan
+                </Button>
+              </div>
             </div>
           </div>
         </div>

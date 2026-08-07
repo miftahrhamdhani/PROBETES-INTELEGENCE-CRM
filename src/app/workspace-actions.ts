@@ -8,9 +8,14 @@ import { getWorkspaceOverview, listAssignableCrmUsers } from "@/server/workspace
 import {
   assignTask,
   bulkAssignTasks,
+  bulkCompleteTasks,
   bulkSetTaskStatus,
+  bulkSetTaskType,
   cancelTask,
   completeTask,
+  moveTasksToTrash,
+  permanentlyDeleteTasks,
+  restoreTasks,
   confirmJoinedGroupFromTask,
   createManualTask,
   createManualTasksBulk,
@@ -19,17 +24,22 @@ import {
   listWorkspaceTasks,
   setTaskDueDate,
   setTaskStatus,
+  updateTaskNotes,
 } from "@/server/workspace/tasks";
 import {
   assignTaskSchema,
   bulkAssignSchema,
+  bulkCompleteSchema,
   bulkStatusSchema,
+  bulkTaskTypeSchema,
   completeTaskSchema,
   confirmJoinedGroupSchema,
   createTaskSchema,
   createTasksBulkSchema,
   setDueDateSchema,
   setStatusSchema,
+  taskIdsSchema,
+  updateTaskNotesSchema,
 } from "@/lib/workspace-contracts";
 import {
   idSchema,
@@ -114,6 +124,39 @@ export async function bulkSetTaskStatusAction(input: unknown) {
   return bulkSetTaskStatus(body.taskIds, body.status, userId);
 }
 
+export async function bulkSetTaskTypeAction(input: unknown) {
+  const userId = await actor();
+  const body = bulkTaskTypeSchema.parse(input);
+  return bulkSetTaskType(body.taskIds, body.taskType, userId);
+}
+
+export async function moveTasksToTrashAction(input: unknown) {
+  const userId = await actor();
+  const body = taskIdsSchema.parse(input);
+  return moveTasksToTrash(body.taskIds, userId);
+}
+
+export async function restoreTasksAction(input: unknown) {
+  const userId = await actor();
+  const body = taskIdsSchema.parse(input);
+  return restoreTasks(body.taskIds, userId);
+}
+
+export async function permanentlyDeleteTasksAction(input: unknown) {
+  await requireRole("ADMIN", "CRM");
+  const body = taskIdsSchema.parse(input);
+  return permanentlyDeleteTasks(body.taskIds);
+}
+
+/** Selesaikan banyak task sekaligus (Broadcast -> Completed), outcome wajib.
+ *  Task yang tidak eligible (bukan ASSIGNED/IN_PROGRESS) dilewati, bukan
+ *  menggagalkan seluruh batch — sama pola dengan bulkSetTaskStatusAction. */
+export async function bulkCompleteTasksAction(input: unknown) {
+  const userId = await actor();
+  const body = bulkCompleteSchema.parse(input);
+  return bulkCompleteTasks(body.taskIds, { outcome: body.outcome, notes: body.notes ?? null }, userId);
+}
+
 export async function completeTaskAction(taskId: unknown, input: unknown): Promise<void> {
   const userId = await actor();
   const id = idSchema.parse(taskId);
@@ -126,6 +169,15 @@ export async function cancelTaskAction(taskId: unknown, note?: unknown): Promise
   const id = idSchema.parse(taskId);
   const parsedNote = z.string().trim().max(2000).nullable().optional().parse(note ?? null);
   await cancelTask(id, userId, parsedNote ?? null);
+}
+
+/** Catatan customer pada task (tab Completed) — bisa diperbarui kapan saja,
+ *  termasuk setelah task selesai. Tidak mengubah status/outcome/PIC. */
+export async function updateTaskNotesAction(taskId: unknown, input: unknown): Promise<void> {
+  const userId = await actor();
+  const id = idSchema.parse(taskId);
+  const body = updateTaskNotesSchema.parse(input);
+  await updateTaskNotes(id, body.notes?.trim() || null, userId);
 }
 
 export async function setTaskDueDateAction(taskId: unknown, input: unknown): Promise<void> {

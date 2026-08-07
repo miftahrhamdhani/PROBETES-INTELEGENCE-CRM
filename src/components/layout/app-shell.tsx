@@ -15,8 +15,24 @@ async function getShellSessionUser(): Promise<ShellSessionUser> {
   return { name: user.name ?? user.email ?? "User", role: user.role };
 }
 
-/** Server wrapper: satu query ringan memberi tanggal/status dataset ke seluruh layout. */
-export async function AppShell({ title, children }: { title: string; children: ReactNode }) {
+/** Server wrapper: satu query ringan memberi tanggal/status dataset ke seluruh layout.
+ *
+ * `prominentTitle` (opsional, default false) = judul halaman lebih besar + ikon
+ * jam di baris "Data per …", dipakai halaman yang memang berdiri sebagai
+ * dashboard penuh (Pembagian Tugas). Default sengaja mempertahankan tampilan
+ * lama supaya halaman lain tidak ikut berubah. */
+export async function AppShell({
+  title,
+  children,
+  prominentTitle = false,
+  breadcrumb,
+}: {
+  title: string;
+  children: ReactNode;
+  prominentTitle?: boolean;
+  /** Opsional: baris breadcrumb kecil di atas judul (mis. "Workspace CRM > Master Produk"). */
+  breadcrumb?: ReactNode;
+}) {
   const [dataset, sessionUser] = await Promise.all([
     getActiveDatasetInfo().catch(() => ({
       asOfDate: null,
@@ -27,7 +43,7 @@ export async function AppShell({ title, children }: { title: string; children: R
     getShellSessionUser(),
   ]);
   return (
-    <AppShellClient title={title} dataset={dataset} sessionUser={sessionUser}>
+    <AppShellClient title={title} dataset={dataset} sessionUser={sessionUser} prominentTitle={prominentTitle} breadcrumb={breadcrumb}>
       {children}
     </AppShellClient>
   );

@@ -132,6 +132,7 @@ function TaskDetailBody({
       <SheetBody className="space-y-5">
         <section className="grid grid-cols-2 gap-3 text-xs">
           <Field label="Produk Pertama" value={detail.firstProductName ?? "—"} />
+          <Field label="Sumber" value={detail.firstOrderDivision ?? "—"} />
           <Field label="Status Grup" value={MEMBERSHIP_STATUS_LABELS[detail.membershipStatus]} />
           <Field label="Customer Sejak" value={formatDate(detail.firstOrderDate ?? detail.createdAt)} />
           <Field label="Terdeteksi" value={formatDate(detail.createdAt)} />

@@ -32,7 +32,7 @@ test.describe("Form Pesanan — produk, bonus, COD, TOTAL real-time", () => {
     await expect(page.getByText("Data Konsumen")).toBeVisible();
   });
 
-  test("product combobox membaca Master Data (workspace_products)", async ({ page }) => {
+  test("product combobox membaca Master Produk (workspace_products)", async ({ page }) => {
     const trigger = page.getByRole("button", { name: "Pilih produk" }).first();
     await trigger.click();
     await page.getByPlaceholder("Cari...").fill("Amandia Muesli");

@@ -33,17 +33,17 @@ test.describe("Sidebar SSR — kategori aktif terbuka sejak HTML pertama", () =>
     // Item lain dalam kategori yang sama (Workspace) turut terlihat, bukan
     // hanya item aktifnya — bukti panelnya benar-benar expanded, bukan
     // kebetulan satu link muncul di luar struktur kategori.
-    await expect(page.getByRole("link", { name: "Master Data", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Master Produk", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Biaya Operasional", exact: true })).toBeVisible();
 
     await context.close();
   });
 
-  test("direct load ke route bersarang lain (Master Data) tetap terbuka", async ({ browser }) => {
+  test("direct load ke route bersarang lain (Master Produk) tetap terbuka", async ({ browser }) => {
     const context = await browser.newContext({ storageState: authStatePath("admin"), javaScriptEnabled: false });
     const page = await context.newPage();
-    await page.goto("/workspace/master-data");
-    await expect(page.getByRole("link", { name: "Master Data", exact: true })).toHaveAttribute("aria-current", "page");
+    await page.goto("/workspace/master-produk");
+    await expect(page.getByRole("link", { name: "Master Produk", exact: true })).toHaveAttribute("aria-current", "page");
     await context.close();
   });
 
@@ -61,7 +61,7 @@ test.describe("Sidebar SSR — kategori aktif terbuka sejak HTML pertama", () =>
       if (/hydration|did not match|Text content does not match/i.test(text)) hydrationWarnings.push(text);
     });
 
-    for (const route of ["/workspace/pesanan", "/workspace/master-data", "/customers", "/cluster"]) {
+    for (const route of ["/workspace/pesanan", "/workspace/master-produk", "/customers", "/cluster"]) {
       await page.goto(route);
       await page.waitForLoadState("networkidle");
     }
@@ -92,16 +92,16 @@ test.describe("Sidebar SSR — kategori aktif terbuka sejak HTML pertama", () =>
     await page.goto("/workspace/overview");
     await expect(page.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
 
-    await page.getByRole("link", { name: "Master Data", exact: true }).click();
-    await page.waitForURL("**/workspace/master-data**");
-    await expect(page.getByRole("link", { name: "Master Data", exact: true })).toHaveAttribute("aria-current", "page");
+    await page.getByRole("link", { name: "Master Produk", exact: true }).click();
+    await page.waitForURL("**/workspace/master-produk**");
+    await expect(page.getByRole("link", { name: "Master Produk", exact: true })).toHaveAttribute("aria-current", "page");
 
     await page.goBack();
     await page.waitForURL("**/workspace/overview**");
     await expect(page.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
 
     await page.goForward();
-    await page.waitForURL("**/workspace/master-data**");
-    await expect(page.getByRole("link", { name: "Master Data", exact: true })).toHaveAttribute("aria-current", "page");
+    await page.waitForURL("**/workspace/master-produk**");
+    await expect(page.getByRole("link", { name: "Master Produk", exact: true })).toHaveAttribute("aria-current", "page");
   });
 });

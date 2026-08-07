@@ -580,8 +580,11 @@ export function CustomerDetailSheet({
                 <div className="space-y-2">
                   {detail.orders.map((order) => (
                     <div key={order.orderId} className="rounded-md border p-3 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{formatDate(order.orderDate)}</span>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-medium">{formatDate(order.orderDate)}</span>
+                          {order.division ? <Badge variant="outline" className="text-[10px]">{order.division}</Badge> : null}
+                        </span>
                         <span className="font-semibold tabular">{formatRupiah(order.orderTotal)}</span>
                       </div>
                       <p className="mt-0.5 text-[11px] text-muted-foreground">

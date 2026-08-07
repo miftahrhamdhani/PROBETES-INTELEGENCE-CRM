@@ -53,10 +53,10 @@ describe("default pagination tabel workspace", () => {
     expect(filter.perPage).toBe(50);
   });
 
-  it("Master Data default 50 baris (sebelumnya tanpa LIMIT sama sekali)", () => {
+  it("Master Produk default 10 baris sesuai desain", () => {
     const filter = workspaceProductFilterSchema.parse({});
     expect(filter.page).toBe(1);
-    expect(filter.perPage).toBe(50);
+    expect(filter.perPage).toBe(10);
   });
 
   it("page size yang boleh dipilih user tetap dibatasi", () => {

@@ -15,7 +15,18 @@ const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta
  */
 const config = [
   // next-env.d.ts digenerate Next.js setiap build — bukan source yang kita tulis.
-  { ignores: [".next/**", "node_modules/**", "artifacts/**", "src/server/db/migrations/**", "next-env.d.ts"] },
+  // `.next-verify/**` = output build verifikasi (NEXT_BUILD_DIR, lihat
+  // next.config.ts) — sama seperti `.next/**`, isinya bundel generated.
+  {
+    ignores: [
+      ".next/**",
+      ".next-verify/**",
+      "node_modules/**",
+      "artifacts/**",
+      "src/server/db/migrations/**",
+      "next-env.d.ts",
+    ],
+  },
 
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 

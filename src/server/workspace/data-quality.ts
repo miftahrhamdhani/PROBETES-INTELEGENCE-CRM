@@ -147,7 +147,7 @@ export async function retryUnmappedProduct(id: number, actorId: number): Promise
     const row = existing.rows[0];
     if (!row) throw new UnmappedProductNotFoundError();
     if (row.status !== "RESOLVED") {
-      throw new UnmappedProductNotResolvedError("Petakan produk ini ke Master Data terlebih dahulu sebelum retry");
+      throw new UnmappedProductNotResolvedError("Petakan produk ini ke Master Produk terlebih dahulu sebelum retry");
     }
 
     const retry = await retryOrdersForResolvedProduct(client, row.normalized_name, row.raw_product_name);

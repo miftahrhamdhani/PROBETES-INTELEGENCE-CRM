@@ -71,6 +71,9 @@ export type CustomerListRow = {
   groupName: string | null;
   picName: string | null;
   csNames: string;
+  /** Sumber/channel closing pertama (division order pertama dari Database All —
+   *  mis. AKUISISI, CRM, TIKTOK, TIKTOK MP, MP, CS). */
+  firstOrderDivision: string | null;
   /** Human-readable alasan NEEDS_REVIEW, null kalau cluster bukan NEEDS_REVIEW. */
   reviewReason: string | null;
   /** true kalau customer ini pertama kali muncul di batch Database All yang
@@ -103,6 +106,8 @@ export type CustomerOrder = {
   orderDate: string;
   orderTotal: string;
   platform: string | null;
+  /** Sumber/channel transaksi dari Database All (mis. AKUISISI, CRM, TIKTOK, TIKTOK MP, MP, CS). */
+  division: string | null;
   paymentMethod: string | null;
   csName: string | null;
   items: CustomerOrderItem[];

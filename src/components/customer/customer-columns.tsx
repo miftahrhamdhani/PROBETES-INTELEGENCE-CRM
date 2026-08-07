@@ -145,6 +145,17 @@ export function buildCustomerColumns(opts: RowActionOpts<CustomerListRow>): Colu
       cell: ({ row }) => <span className="font-medium tabular">{formatRupiah(row.original.monetary)}</span>,
     },
     {
+      id: "firstOrderDivision",
+      header: "Sumber",
+      size: 100,
+      cell: ({ row }) =>
+        row.original.firstOrderDivision ? (
+          <Badge variant="outline">{row.original.firstOrderDivision}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
       id: "cluster",
       header: "Cluster",
       size: 110,

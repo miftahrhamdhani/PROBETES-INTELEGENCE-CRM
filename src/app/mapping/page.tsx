@@ -50,7 +50,7 @@ export default async function ProductMappingPage() {
             jangan diabaikan.
           </p>
           <p className="mt-1 text-amber-800 dark:text-amber-300">
-            Terpisah total dari Master Data Workspace CRM (Pesanan, Product ID <code>PRO-</code>/<code>KSB-</code>) —
+            Terpisah total dari Master Produk Workspace CRM (Pesanan, Product ID <code>PRO-</code>/<code>KSB-</code>) —
             pesanan di Workspace CRM sudah menunjuk produk asli langsung, tidak butuh mapping nama mentah seperti ini.
             Saat Cohort (dan analitik lain di atas) dipindah untuk membaca dari database Workspace, halaman ini akan
             ditinjau ulang — belum terjadi sampai ada pengumuman eksplisit.

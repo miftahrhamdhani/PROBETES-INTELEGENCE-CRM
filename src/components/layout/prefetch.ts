@@ -17,7 +17,7 @@ export const EAGER_PREFETCH_HREFS: ReadonlySet<string> = new Set([
   "/workspace/overview",
   "/workspace/pesanan",
   "/workspace/pembagian-tugas",
-  "/workspace/master-data",
+  "/workspace/master-produk",
   "/workspace/biaya-operasional",
 ]);
 

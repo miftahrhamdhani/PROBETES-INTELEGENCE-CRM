@@ -5,6 +5,7 @@ import { recalculateClusterForCustomer } from "@/server/import/orchestrator";
 import {
   canTransitionStatus,
   type CrmTaskStatus,
+  type ManualCrmTaskType,
   type WorkspaceTaskListFilter,
 } from "@/lib/workspace-contracts";
 import type {
@@ -21,8 +22,15 @@ export class InvalidAssigneeError extends Error {}
 const DEFAULT_PER_PAGE = 60;
 const MAX_PER_PAGE = 200;
 
+/**
+ * `t.id::int` WAJIB: `crm_tasks.id` bertipe bigserial (int8) dan driver Neon
+ * mengembalikan bigint sebagai STRING demi menjaga presisi. Tanpa cast ini
+ * `WorkspaceTaskRow.id` yang dideklarasikan `number` sebenarnya berisi string
+ * saat runtime — seluruh aksi massal (bulk assign / bulk status) ditolak Zod
+ * `z.number()`. Pola sama dengan `o.id::int` di server/workspace/pesanan.ts.
+ */
 const TASK_ROW_SELECT = sql`
-  t.id, t.customer_id, cu.name AS customer_name, cu.normalized_phone AS customer_phone,
+  t.id::int AS id, t.customer_id, cu.name AS customer_name, cu.normalized_phone AS customer_phone,
   r.first_order_date::text AS first_order_date,
   (
     SELECT p.name FROM orders o2
@@ -32,12 +40,23 @@ const TASK_ROW_SELECT = sql`
     ORDER BY o2.order_date ASC, o2.id ASC, oi2.id ASC
     LIMIT 1
   ) AS first_product_name,
+  /** Sumber/channel closing pertama customer (mis. AKUISISI, CRM, TIKTOK,
+   *  TIKTOK MP, MP, CS dari Database All) — bukan order terbaru, supaya tetap
+   *  menjawab "customer ini awalnya datang dari mana" walau order berikutnya
+   *  ditangani division lain (pola AKUISISI -> CRM di data existing). */
+  (
+    SELECT o3.division FROM orders o3
+    WHERE o3.customer_id = t.customer_id
+    ORDER BY o3.order_date ASC, o3.id ASC
+    LIMIT 1
+  ) AS first_order_division,
   cc.cluster_code,
   COALESCE(gm.status, 'NOT_GROUPED') AS membership_status,
   t.task_type, t.status, t.outcome,
   t.assigned_to AS pic_user_id, pic.name AS pic_name,
   t.assigned_at::text AS assigned_at, t.due_at::text AS due_at,
   t.completed_at::text AS completed_at, t.notes,
+  t.deleted_from_status, t.deleted_at::text AS deleted_at,
   (t.due_at IS NOT NULL AND t.due_at < CURRENT_DATE AND t.status NOT IN ('DONE','CANCELLED')) AS overdue,
   t.created_at::text AS created_at
 `;
@@ -58,6 +77,7 @@ type TaskRowDb = {
   customer_phone: string;
   first_order_date: string | null;
   first_product_name: string | null;
+  first_order_division: string | null;
   cluster_code: string | null;
   membership_status: WorkspaceTaskRow["membershipStatus"];
   task_type: WorkspaceTaskRow["taskType"];
@@ -69,6 +89,8 @@ type TaskRowDb = {
   due_at: string | null;
   completed_at: string | null;
   notes: string | null;
+  deleted_from_status: CrmTaskStatus | null;
+  deleted_at: string | null;
   overdue: boolean;
   created_at: string;
 };
@@ -81,6 +103,7 @@ function toRow(row: TaskRowDb): WorkspaceTaskRow {
     customerPhone: row.customer_phone,
     firstOrderDate: row.first_order_date,
     firstProductName: row.first_product_name,
+    firstOrderDivision: row.first_order_division,
     clusterCode: row.cluster_code as WorkspaceTaskRow["clusterCode"],
     membershipStatus: row.membership_status,
     taskType: row.task_type,
@@ -92,6 +115,8 @@ function toRow(row: TaskRowDb): WorkspaceTaskRow {
     dueAt: row.due_at,
     completedAt: row.completed_at,
     notes: row.notes,
+    deletedFromStatus: row.deleted_from_status,
+    deletedAt: row.deleted_at,
     overdue: row.overdue,
     createdAt: row.created_at,
   };
@@ -120,8 +145,18 @@ function buildConditions(filter: WorkspaceTaskListFilter): SQL[] {
   // DEFAULT — mirip customer diarsipkan yang hilang dari daftar Customers tanpa
   // pernah dihapus dari DB. Begitu user memilih Status = Dibatalkan secara
   // eksplisit di filter, tetap terlihat penuh (dan bisa dipulihkan dari sana).
+  // `statuses` (tab Task/Broadcast/Completed) dan `status` (dropdown filter)
+  // digabung AND: memilih Status = Assigned saat berada di tab Broadcast
+  // mempersempit di dalam tab itu, bukan melompat keluar darinya.
+  if (filter.statuses?.length) {
+    const list = sql.join(
+      filter.statuses.map((status) => sql`${status}::crm_task_status`),
+      sql`, `
+    );
+    conditions.push(sql`t.status IN (${list})`);
+  }
   if (filter.status) conditions.push(sql`t.status = ${filter.status}`);
-  else conditions.push(sql`t.status <> 'CANCELLED'`);
+  else if (!filter.statuses?.length) conditions.push(sql`t.status <> 'CANCELLED'`);
   if (filter.taskType) conditions.push(sql`t.task_type = ${filter.taskType}`);
   if (filter.outcome) conditions.push(sql`t.outcome = ${filter.outcome}`);
   if (filter.dateFrom) conditions.push(sql`t.due_at >= ${filter.dateFrom}::date`);
@@ -191,7 +226,7 @@ export async function getWorkspaceTaskDetail(taskId: number): Promise<WorkspaceT
       changed_by_name: string | null;
       changed_at: string;
     }>(sql`
-      SELECT h.id, h.from_status, h.to_status, h.note, u.name AS changed_by_name, h.changed_at::text AS changed_at
+      SELECT h.id::int AS id, h.from_status, h.to_status, h.note, u.name AS changed_by_name, h.changed_at::text AS changed_at
       FROM crm_task_history h
       LEFT JOIN users u ON u.id = h.changed_by
       WHERE h.task_id = ${taskId}
@@ -237,7 +272,7 @@ export async function listCustomerTaskHistory(customerId: number): Promise<Custo
     notes: string | null;
     created_at: string;
   }>(sql`
-    SELECT t.id, t.task_type, t.status, t.outcome, pic.name AS pic_name,
+    SELECT t.id::int AS id, t.task_type, t.status, t.outcome, pic.name AS pic_name,
       t.due_at::text AS due_at, t.completed_at::text AS completed_at, t.notes, t.created_at::text AS created_at
     FROM crm_tasks t
     LEFT JOIN users pic ON pic.id = t.assigned_to
@@ -336,7 +371,7 @@ export async function bulkAssignTasks(
       assigned_to: number | null;
       due_at: string | null;
     }>(
-      "SELECT id, status, assigned_to, due_at::text AS due_at FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
+      "SELECT id::int AS id, status, assigned_to, due_at::text AS due_at FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
       [taskIds]
     );
     const eligible = before.rows.filter(
@@ -399,23 +434,55 @@ export async function setTaskStatus(
     }
     if (row.status === status) return;
 
+    // `$2::crm_task_status` di SETIAP pemakaian, bukan hanya di `status = $2`:
+    // tanpa cast, Postgres menyimpulkan $2 sebagai crm_task_status pada baris
+    // assignment TAPI sebagai text pada perbandingan `$2 = 'UNASSIGNED'`, lalu
+    // menolak seluruh query dengan "inconsistent types deduced for parameter $2".
     await client.query(
       `UPDATE crm_tasks SET
-         status = $2,
-         assigned_to = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_to END,
-         assigned_by = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_by END,
-         assigned_at = CASE WHEN $2 = 'UNASSIGNED' THEN NULL ELSE assigned_at END,
-         first_activity_at = CASE WHEN $2 = 'IN_PROGRESS' THEN COALESCE(first_activity_at, now()) ELSE first_activity_at END,
+         status = $2::crm_task_status,
+         assigned_to = CASE WHEN $2::crm_task_status = 'UNASSIGNED' THEN NULL ELSE assigned_to END,
+         assigned_by = CASE WHEN $2::crm_task_status = 'UNASSIGNED' THEN NULL ELSE assigned_by END,
+         assigned_at = CASE WHEN $2::crm_task_status = 'UNASSIGNED' THEN NULL ELSE assigned_at END,
+         first_activity_at = CASE WHEN $2::crm_task_status = 'IN_PROGRESS' THEN COALESCE(first_activity_at, now()) ELSE first_activity_at END,
          updated_at = now()
        WHERE id = $1`,
       [taskId, status]
     );
     await client.query(
       `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
-       VALUES ($1, 'STATUS_CHANGED', jsonb_build_object('from', $2, 'to', $3), $4)`,
+       VALUES ($1, 'STATUS_CHANGED', jsonb_build_object('from', $2::text, 'to', $3::text), $4)`,
       [taskId, row.status, status, actorUserId]
     );
     await insertHistory(client, taskId, row.status, status, actorUserId, note);
+  });
+}
+
+/**
+ * Perbarui catatan customer pada satu task (tab Completed: "masih negosiasi",
+ * "sudah dibayar", dst). Bisa dipakai pada status APA PUN termasuk DONE —
+ * catatan memang berkembang setelah broadcast selesai, jadi sengaja TIDAK
+ * dikunci seperti transisi status.
+ *
+ * Hanya menyentuh kolom `notes`; status/outcome/PIC tidak pernah ikut berubah.
+ * Perubahannya tetap tercatat di crm_task_activities supaya jejak audit utuh.
+ */
+export async function updateTaskNotes(taskId: number, notes: string | null, actorUserId: number): Promise<void> {
+  await withTransaction(async (client) => {
+    const current = await client.query<{ notes: string | null }>(
+      "SELECT notes FROM crm_tasks WHERE id = $1 FOR UPDATE",
+      [taskId]
+    );
+    const row = current.rows[0];
+    if (!row) throw new TaskNotFoundError();
+    if ((row.notes ?? null) === notes) return;
+
+    await client.query("UPDATE crm_tasks SET notes = $2, updated_at = now() WHERE id = $1", [taskId, notes]);
+    await client.query(
+      `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
+       VALUES ($1, 'NOTES_UPDATED', jsonb_build_object('from', $2::text, 'to', $3::text), $4)`,
+      [taskId, row.notes, notes, actorUserId]
+    );
   });
 }
 
@@ -429,7 +496,7 @@ export async function bulkSetTaskStatus(
 ): Promise<{ updated: number; skipped: number }> {
   return withTransaction(async (client) => {
     const before = await client.query<{ id: number; status: CrmTaskStatus; assigned_to: number | null }>(
-      "SELECT id, status, assigned_to FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
+      "SELECT id::int AS id, status, assigned_to FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
       [taskIds]
     );
     const eligible = before.rows.filter(
@@ -446,7 +513,7 @@ export async function bulkSetTaskStatus(
 
     await client.query(
       `UPDATE crm_tasks SET
-         status = $2,
+         status = $2::crm_task_status,
          assigned_to = CASE WHEN $3 THEN NULL ELSE assigned_to END,
          assigned_by = CASE WHEN $3 THEN NULL ELSE assigned_by END,
          assigned_at = CASE WHEN $3 THEN NULL ELSE assigned_at END,
@@ -513,15 +580,172 @@ export async function completeTask(
     );
     await client.query(
       `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
-       VALUES ($1, 'OUTCOME_RECORDED', jsonb_build_object('outcome', $2, 'officialOrderId', $3), $4)`,
+       VALUES ($1, 'OUTCOME_RECORDED', jsonb_build_object('outcome', $2::text, 'officialOrderId', $3::bigint), $4)`,
       [taskId, input.outcome, officialOrderId, actorUserId]
     );
     await insertHistory(client, taskId, row.status, "DONE", actorUserId, `Outcome: ${input.outcome}`);
   });
 }
 
+/**
+ * Selesaikan BANYAK task sekaligus (tab Broadcast -> Completed). Aturan
+ * bisnisnya identik dengan completeTask satuan: hanya task ASSIGNED/IN_PROGRESS
+ * yang bisa selesai, dan outcome WAJIB — bedanya satu outcome+catatan dipakai
+ * untuk seluruh task terpilih.
+ *
+ * `linkedReportId` sengaja TIDAK didukung di jalur massal: menautkan laporan
+ * CRM itu keputusan per-task (satu laporan hanya boleh tertaut ke satu task),
+ * jadi tetap lewat Detail Task satuan.
+ */
+export async function bulkCompleteTasks(
+  taskIds: number[],
+  input: { outcome: string; notes?: string | null },
+  actorUserId: number
+): Promise<{ updated: number; skipped: number }> {
+  return withTransaction(async (client) => {
+    const before = await client.query<{ id: number; status: CrmTaskStatus }>(
+      "SELECT id::int AS id, status FROM crm_tasks WHERE id = ANY($1::bigint[]) FOR UPDATE",
+      [taskIds]
+    );
+    const eligible = before.rows.filter((r) => r.status === "ASSIGNED" || r.status === "IN_PROGRESS");
+    if (eligible.length === 0) return { updated: 0, skipped: taskIds.length };
+
+    const eligibleIds = eligible.map((r) => r.id);
+    const fromStatuses = eligible.map((r) => r.status);
+
+    await client.query(
+      `UPDATE crm_tasks SET
+         status = 'DONE', outcome = $2::crm_task_outcome, notes = COALESCE($3, notes),
+         first_activity_at = COALESCE(first_activity_at, now()),
+         completed_at = now(), completed_by = $4, updated_at = now()
+       WHERE id = ANY($1::bigint[])`,
+      [eligibleIds, input.outcome, input.notes ?? null, actorUserId]
+    );
+    await client.query(
+      `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
+       SELECT id, 'OUTCOME_RECORDED', jsonb_build_object('outcome', $2::text, 'bulk', true), $3
+       FROM unnest($1::bigint[]) AS t(id)`,
+      [eligibleIds, input.outcome, actorUserId]
+    );
+    await client.query(
+      `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
+       SELECT id, from_status, 'DONE'::crm_task_status, $3, $4
+       FROM unnest($1::bigint[], $2::crm_task_status[]) AS t(id, from_status)`,
+      [eligibleIds, fromStatuses, `Bulk selesai — outcome: ${input.outcome}`, actorUserId]
+    );
+
+    return { updated: eligible.length, skipped: taskIds.length - eligible.length };
+  });
+}
+
 export async function cancelTask(taskId: number, actorUserId: number, note?: string | null): Promise<void> {
-  await setTaskStatus(taskId, "CANCELLED", actorUserId, note ?? "Dibatalkan");
+  await moveTasksToTrash([taskId], actorUserId, note ?? "Dihapus ke Riwayat Hapus");
+}
+
+/** Soft delete task. Status asal disimpan agar restore kembali ke tahap semula. */
+export async function moveTasksToTrash(
+  taskIds: number[],
+  actorUserId: number,
+  note = "Dihapus ke Riwayat Hapus"
+): Promise<{ updated: number; skipped: number }> {
+  return withTransaction(async (client) => {
+    const before = await client.query<{ id: number; status: CrmTaskStatus }>(
+      "SELECT id::int AS id, status FROM crm_tasks WHERE id = ANY($1::bigint[]) AND status <> 'CANCELLED' FOR UPDATE",
+      [taskIds]
+    );
+    if (!before.rows.length) return { updated: 0, skipped: taskIds.length };
+
+    const ids = before.rows.map((row) => row.id);
+    const statuses = before.rows.map((row) => row.status);
+    await client.query(
+      `UPDATE crm_tasks SET status = 'CANCELLED', deleted_from_status = status,
+         deleted_at = now(), deleted_by = $2, updated_at = now()
+       WHERE id = ANY($1::bigint[])`,
+      [ids, actorUserId]
+    );
+    await client.query(
+      `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
+       SELECT id, from_status, 'CANCELLED'::crm_task_status, $3::text, $4::int
+       FROM unnest($1::bigint[], $2::crm_task_status[]) AS t(id, from_status)`,
+      [ids, statuses, note, actorUserId]
+    );
+    return { updated: ids.length, skipped: taskIds.length - ids.length };
+  });
+}
+
+/** Pulihkan task dari Riwayat Hapus ke status sebelum dihapus. */
+export async function restoreTasks(taskIds: number[], actorUserId: number): Promise<{ restored: number; skipped: number }> {
+  return withTransaction(async (client) => {
+    const before = await client.query<{ id: number; deleted_from_status: CrmTaskStatus | null }>(
+      `SELECT id::int AS id, deleted_from_status FROM crm_tasks
+       WHERE id = ANY($1::bigint[]) AND status = 'CANCELLED' FOR UPDATE`,
+      [taskIds]
+    );
+    const eligible = before.rows.filter((row) => row.deleted_from_status && row.deleted_from_status !== "CANCELLED");
+    if (!eligible.length) return { restored: 0, skipped: taskIds.length };
+
+    const ids = eligible.map((row) => row.id);
+    const statuses = eligible.map((row) => row.deleted_from_status!);
+    await client.query(
+      `UPDATE crm_tasks AS task SET status = restored.status, deleted_from_status = NULL,
+         deleted_at = NULL, deleted_by = NULL, updated_at = now()
+       FROM unnest($1::bigint[], $2::crm_task_status[]) AS restored(id, status)
+       WHERE task.id = restored.id`,
+      [ids, statuses]
+    );
+    await client.query(
+      `INSERT INTO crm_task_history (task_id, from_status, to_status, note, changed_by)
+       SELECT id, 'CANCELLED'::crm_task_status, status, 'Dipulihkan dari Riwayat Hapus', $3::int
+       FROM unnest($1::bigint[], $2::crm_task_status[]) AS restored(id, status)`,
+      [ids, statuses, actorUserId]
+    );
+    return { restored: ids.length, skipped: taskIds.length - ids.length };
+  });
+}
+
+/** Ubah jenis tugas massal. FOLLOW_UP_NEW_CUSTOMER tidak ditawarkan karena
+ * hanya boleh dibuat otomatis oleh import; task yang sudah selesai tetap utuh. */
+export async function bulkSetTaskType(
+  taskIds: number[],
+  taskType: ManualCrmTaskType,
+  actorUserId: number
+): Promise<{ updated: number; skipped: number }> {
+  return withTransaction(async (client) => {
+    const result = await client.query<{ id: number }>(
+      `UPDATE crm_tasks SET task_type = $2::crm_task_type, updated_at = now()
+       WHERE id = ANY($1::bigint[]) AND status NOT IN ('DONE', 'CANCELLED') AND task_type <> $2::crm_task_type
+       RETURNING id::int AS id`,
+      [taskIds, taskType]
+    );
+    if (result.rows.length) {
+      await client.query(
+        `INSERT INTO crm_task_activities (task_id, activity_type, detail, actor_user_id)
+         SELECT id, 'TASK_TYPE_CHANGED', jsonb_build_object('to', $2::text, 'bulk', true), $3
+         FROM unnest($1::bigint[]) AS t(id)`,
+        [result.rows.map((row) => row.id), taskType, actorUserId]
+      );
+    }
+    return { updated: result.rows.length, skipped: taskIds.length - result.rows.length };
+  });
+}
+
+/** Hapus permanen hanya task di Riwayat Hapus. Customer tidak disentuh. */
+export async function permanentlyDeleteTasks(taskIds: number[]): Promise<{ deleted: number; skipped: number }> {
+  return withTransaction(async (client) => {
+    const eligible = await client.query<{ id: number }>(
+      "SELECT id::int AS id FROM crm_tasks WHERE id = ANY($1::bigint[]) AND status = 'CANCELLED' FOR UPDATE",
+      [taskIds]
+    );
+    const ids = eligible.rows.map((row) => row.id);
+    if (!ids.length) return { deleted: 0, skipped: taskIds.length };
+
+    await client.query("UPDATE crm_reports SET task_id = NULL WHERE task_id = ANY($1::bigint[])", [ids]);
+    const result = await client.query<{ id: number }>(
+      "DELETE FROM crm_tasks WHERE id = ANY($1::bigint[]) AND status = 'CANCELLED' RETURNING id::int AS id",
+      [ids]
+    );
+    return { deleted: result.rows.length, skipped: taskIds.length - result.rows.length };
+  });
 }
 
 export async function setTaskDueDate(taskId: number, dueAt: string | null, actorUserId: number): Promise<void> {

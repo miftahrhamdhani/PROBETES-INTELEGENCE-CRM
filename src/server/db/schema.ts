@@ -874,6 +874,9 @@ export const crmTasks = pgTable(
      *  yang dibuat manual (FOLLOW_UP_REPEAT/BROADCAST/INVITE_GROUP/OTHER). */
     detectedFromBatchId: integer("detected_from_batch_id").references(() => importBatches.id),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }),
+    deletedFromStatus: crmTaskStatus("deleted_from_status"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: integer("deleted_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -884,6 +887,7 @@ export const crmTasks = pgTable(
     index("crm_tasks_due_at_idx").on(t.dueAt),
     index("crm_tasks_created_at_idx").on(t.createdAt),
     index("crm_tasks_type_idx").on(t.taskType),
+    index("crm_tasks_deleted_at_idx").on(t.deletedAt),
     uniqueIndex("crm_tasks_new_customer_uq")
       .on(t.customerId)
       .where(sql`${t.taskType} = 'FOLLOW_UP_NEW_CUSTOMER'`),
@@ -978,6 +982,7 @@ export const workspaceProductAliases = pgTable(
     sourceSystem: text("source_system").notNull().default("DATABASE_ALL"),
     aliasName: text("alias_name").notNull(),
     aliasNormalized: text("alias_normalized").notNull(),
+    notes: text("notes"),
     isActive: boolean("is_active").notNull().default(true),
     createdBy: integer("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

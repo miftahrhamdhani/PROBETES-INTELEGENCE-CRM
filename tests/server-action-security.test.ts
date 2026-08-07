@@ -135,7 +135,7 @@ const ADMIN_ONLY_ACTIONS: Array<[string, () => Promise<unknown>]> = [
 const CRM_PERMISSION_ADMIN_ONLY_ACTIONS: Array<[string, () => Promise<unknown>]> = [
   ["masterData.createWorkspaceProductAction", () => masterData.createWorkspaceProductAction(validProductBody)],
   ["masterData.updateWorkspaceProductAction", () => masterData.updateWorkspaceProductAction(1, validProductBody)],
-  ["masterData.deactivateWorkspaceProductAction", () => masterData.deactivateWorkspaceProductAction(1)],
+  ["masterData.deactivateWorkspaceProductAction", () => masterData.deactivateWorkspaceProductAction(1, { reason: "Alasan uji" })],
   ["masterData.createWorkspaceProductAliasAction", () => masterData.createWorkspaceProductAliasAction({ productInternalId: 1, aliasName: "ALIAS" })],
   // Resolve/retry membuat workspace_order + alias -> sekelas mutation Master Data.
   ["masterData.resolveUnmappedProductAction", () => masterData.resolveUnmappedProductAction(1, 1)],

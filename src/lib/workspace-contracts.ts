@@ -81,6 +81,43 @@ export function canTransitionStatus(from: CrmTaskStatus, to: CrmTaskStatus): boo
  *  ASSIGNED wajib lewat assign agar task selalu punya PIC valid. */
 export const BULK_STATUS_TARGETS = ["UNASSIGNED", "ASSIGNED", "IN_PROGRESS", "CANCELLED"] as const;
 
+/**
+ * Tiga tahap kerja Pembagian Tugas — murni PENGELOMPOKAN status yang sudah ada,
+ * bukan status baru di database:
+ *
+ *   Task      : belum punya PIC. Leader/SPV membagi ke CRM di sini.
+ *   Broadcast : sudah punya PIC, sedang dikerjakan (broadcast berjalan).
+ *   Completed : sudah selesai di-broadcast, lengkap dengan outcome + catatan.
+ *
+ * Task berpindah tab OTOMATIS mengikuti status: begitu di-assign, task pindah
+ * dari Task ke Broadcast; begitu diselesaikan, pindah ke Completed. Task
+ * Dibatalkan ("Hapus dari Pembagian Tugas") tidak muncul di tab mana pun.
+ */
+export const WORKSPACE_TASK_TABS = ["task", "broadcast", "completed", "trash"] as const;
+export type WorkspaceTaskTab = (typeof WORKSPACE_TASK_TABS)[number];
+
+export const WORKSPACE_TASK_TAB_LABELS: Record<WorkspaceTaskTab, string> = {
+  task: "Task",
+  broadcast: "Broadcast",
+  completed: "Completed",
+  trash: "Riwayat Hapus",
+};
+
+export const WORKSPACE_TASK_TAB_STATUSES: Record<WorkspaceTaskTab, readonly CrmTaskStatus[]> = {
+  task: ["UNASSIGNED"],
+  broadcast: ["ASSIGNED", "IN_PROGRESS"],
+  completed: ["DONE"],
+  trash: ["CANCELLED"],
+};
+
+/** Catatan customer pada task — bisa diperbarui kapan saja (mis. "masih
+ *  negosiasi" lalu berubah jadi "sudah dibayar"), termasuk setelah task
+ *  selesai. Dikosongkan = catatan dihapus. */
+export const updateTaskNotesSchema = z.object({
+  notes: z.string().trim().max(2000).nullable(),
+});
+export type UpdateTaskNotesBody = z.infer<typeof updateTaskNotesSchema>;
+
 export const assignTaskSchema = z.object({
   assignedTo: z.number().int().positive(),
   dueAt: z
@@ -113,6 +150,26 @@ export const bulkStatusSchema = z.object({
   status: z.enum(BULK_STATUS_TARGETS),
 });
 export type BulkStatusBody = z.infer<typeof bulkStatusSchema>;
+
+export const bulkTaskTypeSchema = z.object({
+  taskIds: z.array(z.number().int().positive()).min(1).max(500),
+  taskType: z.enum(MANUAL_CRM_TASK_TYPES),
+});
+export type BulkTaskTypeBody = z.infer<typeof bulkTaskTypeSchema>;
+
+export const taskIdsSchema = z.object({
+  taskIds: z.array(z.number().int().positive()).min(1).max(500),
+});
+export type TaskIdsBody = z.infer<typeof taskIdsSchema>;
+
+/** Selesaikan banyak task sekaligus (Broadcast -> Completed). Outcome tetap
+ *  WAJIB seperti completeTask satuan — satu outcome dipakai untuk semuanya. */
+export const bulkCompleteSchema = z.object({
+  taskIds: z.array(z.number().int().positive()).min(1).max(500),
+  outcome: z.enum(CRM_TASK_OUTCOMES),
+  notes: z.string().trim().max(2000).nullable().optional(),
+});
+export type BulkCompleteBody = z.infer<typeof bulkCompleteSchema>;
 
 export const completeTaskSchema = z.object({
   outcome: z.enum(CRM_TASK_OUTCOMES),
@@ -173,6 +230,9 @@ export type WorkspaceTaskListFilter = {
   search?: string;
   pic?: number | "UNASSIGNED";
   status?: CrmTaskStatus;
+  /** Beberapa status sekaligus — dipakai tab "Broadcast" yang mencakup
+   *  ASSIGNED + IN_PROGRESS. Digabung AND dengan `status` bila keduanya ada. */
+  statuses?: CrmTaskStatus[];
   taskType?: CrmTaskType;
   outcome?: CrmTaskOutcome;
   dateFrom?: string;

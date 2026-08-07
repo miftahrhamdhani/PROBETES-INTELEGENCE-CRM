@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { PendingIndicator } from "@/components/ui/pending-indicator";
 
-export const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 /**
  * Pagination server-side untuk seluruh tabel besar (Pesanan, Biaya Operasional,

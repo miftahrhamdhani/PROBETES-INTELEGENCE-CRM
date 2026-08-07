@@ -21,6 +21,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
       overdue: string;
       closing: string;
       joined_group: string;
+      deleted: string;
     }>(sql`
       SELECT
         (SELECT COUNT(*) FROM customers c
@@ -34,7 +35,8 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
         (SELECT COUNT(*) FROM crm_tasks
           WHERE due_at IS NOT NULL AND due_at < CURRENT_DATE AND status NOT IN ('DONE','CANCELLED'))::text AS overdue,
         (SELECT COUNT(*) FROM crm_tasks WHERE outcome = 'CLOSING')::text AS closing,
-        (SELECT COUNT(*) FROM crm_tasks WHERE outcome = 'JOINED_GROUP')::text AS joined_group
+        (SELECT COUNT(*) FROM crm_tasks WHERE outcome = 'JOINED_GROUP')::text AS joined_group,
+        (SELECT COUNT(*) FROM crm_tasks WHERE status = 'CANCELLED')::text AS deleted
     `),
     db.execute<{
       user_id: number;
@@ -46,6 +48,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
       overdue: string;
       closing: string;
       joined_group: string;
+      deleted: string;
       total: string;
     }>(sql`
       SELECT
@@ -57,7 +60,8 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
         COUNT(*) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < CURRENT_DATE AND t.status NOT IN ('DONE','CANCELLED'))::text AS overdue,
         COUNT(*) FILTER (WHERE t.outcome = 'CLOSING')::text AS closing,
         COUNT(*) FILTER (WHERE t.outcome = 'JOINED_GROUP')::text AS joined_group,
-        COUNT(*)::text AS total
+        COUNT(*) FILTER (WHERE t.status = 'CANCELLED')::text AS deleted,
+        COUNT(*) FILTER (WHERE t.status <> 'CANCELLED')::text AS total
       FROM crm_tasks t
       JOIN users u ON u.id = t.assigned_to
       GROUP BY u.id, u.name
@@ -76,6 +80,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
     overdue: Number(row.overdue),
     closing: Number(row.closing),
     joinedGroup: Number(row.joined_group),
+    deleted: Number(row.deleted),
     total: Number(row.total),
   }));
 
@@ -89,6 +94,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
       overdue: Number(kpiRow?.overdue ?? 0),
       closing: Number(kpiRow?.closing ?? 0),
       joinedGroup: Number(kpiRow?.joined_group ?? 0),
+      deleted: Number(kpiRow?.deleted ?? 0),
     },
     picSummary,
   };

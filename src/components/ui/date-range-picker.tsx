@@ -10,17 +10,42 @@ import { DATE_RANGE_PRESET_LABEL, DATE_RANGE_PRESETS, resolveDateRangePreset, ty
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+/**
+ * `YYYY-MM-DD` <-> Date memakai komponen tanggal LOKAL (bukan `new Date(iso)`
+ * yang di-parse sebagai UTC). react-day-picker membandingkan hari memakai waktu
+ * lokal browser, jadi tanggal yang dibangun dari UTC bisa tampil bergeser satu
+ * hari di timezone offset negatif. Dua helper ini simetris: toKey(toDate(s)) === s.
+ */
 function toDate(value: string | null): Date | undefined {
-  return value ? new Date(`${value}T00:00:00Z`) : undefined;
+  if (!value) return undefined;
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
 }
 
 function toKey(date: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-/** Satu komponen Date Range Picker (Popover + Calendar mode="range") dengan
- *  preset — dipakai Overview dan Pesanan (docs prompt §6.1/§7). `from`/`to`
- *  null berarti "Seluruh Data" (tanpa filter tanggal). */
+function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * Date Range Picker — SATU kalender (bukan dua) dengan preset di sisi kiri.
+ * Dipakai seluruh fitur Workspace (Overview, Pesanan, Pembagian Tugas, Biaya
+ * Operasional). `from`/`to` null berarti "Seluruh Data" (tanpa filter tanggal).
+ *
+ * Cara pilih (sengaja sederhana, satu kalender saja):
+ *  - klik 1× tanggal A  -> A jadi awal rentang (belum diterapkan)
+ *  - klik 1× tanggal B  -> rentang A–B langsung diterapkan & popover tertutup
+ *  - klik tanggal A lagi -> hanya tanggal A itu saja (rentang satu hari)
+ *  - atau setelah klik pertama, tekan "Terapkan" untuk memakai satu hari itu saja
+ *
+ * Pilihan disimpan dulu sebagai state `pending` dan BARU dikirim lewat onChange
+ * saat rentangnya lengkap — supaya klik pertama tidak memicu navigasi/refetch
+ * dengan rentang setengah jadi.
+ */
 export function WorkspaceDateRangePicker({
   from,
   to,
@@ -33,15 +58,52 @@ export function WorkspaceDateRangePicker({
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const range: DateRange | undefined = React.useMemo(() => ({ from: toDate(from), to: toDate(to) }), [from, to]);
+  const committed: DateRange | undefined = React.useMemo(() => {
+    const start = toDate(from);
+    return start ? { from: start, to: toDate(to) ?? start } : undefined;
+  }, [from, to]);
 
-  function applyPreset(preset: DateRangePreset) {
-    if (preset === "CUSTOM") return;
-    onChange(resolveDateRangePreset(preset));
+  const [pending, setPending] = React.useState<DateRange | undefined>(committed);
+
+  // Setiap popover dibuka, mulai lagi dari nilai yang sedang aktif — supaya
+  // pilihan setengah jadi dari sesi sebelumnya tidak ikut terbawa.
+  React.useEffect(() => {
+    if (open) setPending(committed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  function apply(range: DateRange | undefined) {
+    if (!range?.from) onChange({ from: null, to: null });
+    else onChange({ from: toKey(range.from), to: toKey(range.to ?? range.from) });
     setOpen(false);
   }
 
+  function applyPreset(preset: DateRangePreset) {
+    if (preset === "CUSTOM") return;
+    const range = resolveDateRangePreset(preset);
+    onChange(range);
+    setOpen(false);
+  }
+
+  function handleDayClick(date: Date) {
+    // Klik pertama (atau klik setelah rentang lengkap) selalu memulai rentang baru.
+    if (!pending?.from || pending.to) {
+      setPending({ from: date, to: undefined });
+      return;
+    }
+    // Klik kedua: lengkapi rentang lalu langsung terapkan. Klik tanggal yang
+    // sama = rentang satu hari.
+    const next: DateRange = isSameDay(date, pending.from)
+      ? { from: date, to: date }
+      : date < pending.from
+        ? { from: date, to: pending.from }
+        : { from: pending.from, to: date };
+    setPending(next);
+    apply(next);
+  }
+
   const label = from && to ? (from === to ? formatDate(from) : `${formatDate(from)} — ${formatDate(to)}`) : "Seluruh Data";
+  const awaitingSecondClick = Boolean(pending?.from && !pending.to);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -65,17 +127,35 @@ export function WorkspaceDateRangePicker({
               </button>
             ))}
           </div>
-          <Calendar
-            mode="range"
-            numberOfMonths={2}
-            selected={range}
-            defaultMonth={range.from}
-            onSelect={(next) => {
-              if (!next) return;
-              onChange({ from: next.from ? toKey(next.from) : null, to: next.to ? toKey(next.to) : next.from ? toKey(next.from) : null });
-              if (next.from && next.to) setOpen(false);
-            }}
-          />
+          <div>
+            <Calendar
+              mode="range"
+              numberOfMonths={1}
+              selected={pending}
+              onDayClick={handleDayClick}
+              defaultMonth={pending?.from ?? committed?.from ?? new Date()}
+            />
+            <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+              <span className="text-[11px] text-muted-foreground">
+                {awaitingSecondClick ? "Pilih tanggal akhir, atau Terapkan untuk satu hari" : "Klik tanggal awal"}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="rounded-sm px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => {
+                    setPending(undefined);
+                    apply(undefined);
+                  }}
+                >
+                  Reset
+                </button>
+                <Button type="button" size="sm" className="h-7 text-[11px]" disabled={!pending?.from} onClick={() => apply(pending)}>
+                  Terapkan
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </PopoverContent>
     </Popover>

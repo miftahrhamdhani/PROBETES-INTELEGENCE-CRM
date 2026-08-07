@@ -72,7 +72,7 @@ async function resolveOrderItems(client: TransactionClient, items: WorkspaceOrde
 
   return items.map((item) => {
     const product = byId.get(item.productInternalId);
-    if (!product) throw new WorkspaceOrderValidationError(`Produk (id ${item.productInternalId}) tidak ditemukan di Master Data`);
+    if (!product) throw new WorkspaceOrderValidationError(`Produk (id ${item.productInternalId}) tidak ditemukan di Master Produk`);
     if (!product.is_active) throw new WorkspaceOrderValidationError(`Produk ${product.product_name} tidak aktif`);
     const allowed = allowedItemTypesForUsage(product.product_usage as never);
     if (!allowed.includes(item.itemType)) {

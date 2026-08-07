@@ -52,6 +52,9 @@ export const workspaceTaskListFilterSchema = z.object({
   search: shortText.optional(),
   pic: z.union([z.coerce.number().int().positive(), z.literal("UNASSIGNED")]).optional(),
   status: z.enum(CRM_TASK_STATUSES).optional(),
+  /** Tab Pembagian Tugas (Broadcast = ASSIGNED + IN_PROGRESS). Dibatasi max 5
+   *  = jumlah status yang ada, supaya payload tidak bisa digelembungkan. */
+  statuses: z.array(z.enum(CRM_TASK_STATUSES)).min(1).max(5).optional(),
   taskType: z.enum(CRM_TASK_TYPES).optional(),
   outcome: z.enum(CRM_TASK_OUTCOMES).optional(),
   dateFrom: isoDate.optional(),

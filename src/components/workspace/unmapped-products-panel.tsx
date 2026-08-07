@@ -21,7 +21,7 @@ type ProductOption = Awaited<ReturnType<typeof loadWorkspaceProductOptionsAction
 
 /**
  * Data Quality — produk tidak dikenal dari import Database All (docs prompt §K).
- * Resolusi membuat alias Master Data untuk nama mentah ini LALU langsung
+ * Resolusi membuat alias Master Produk untuk nama mentah ini LALU langsung
  * me-replay order kanonik yang terdampak — tanpa import ulang file. Order yang
  * masih memuat produk tak dikenal lain sengaja tetap tertahan seluruhnya
  * (bukan sebagian) dan alasannya ditampilkan di toast.
@@ -82,7 +82,7 @@ export function UnmappedProductsPanel({ canManage }: { canManage: boolean }) {
   async function handleResolve(row: UnmappedRow) {
     const pick = picks[row.id];
     if (!pick) {
-      toast.error("Pilih produk Master Data tujuan terlebih dahulu");
+      toast.error("Pilih produk Master Produk tujuan terlebih dahulu");
       return;
     }
     setBusyId(row.id);
@@ -135,7 +135,7 @@ export function UnmappedProductsPanel({ canManage }: { canManage: boolean }) {
           {pendingCount > 0 ? <Badge variant="warning">{pendingCount} pending</Badge> : null}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Order dengan produk ini TIDAK masuk KPI sampai dipetakan ke Master Data. Menyimpan alias langsung menjalankan retry order
+          Order dengan produk ini TIDAK masuk KPI sampai dipetakan ke Master Produk. Menyimpan alias langsung menjalankan retry order
           terdampak — tidak perlu import ulang Database All.
         </p>
       </CardHeader>

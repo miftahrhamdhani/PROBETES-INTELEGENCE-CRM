@@ -30,7 +30,7 @@ const ROUTES: [string, RegExp][] = [
   ["/workspace/overview", /Overview/i],
   ["/workspace/pesanan", /Pesanan/i],
   ["/workspace/pembagian-tugas", /Pembagian Tugas|task/i],
-  ["/workspace/master-data", /Master Data/i],
+  ["/workspace/master-produk", /Master Produk/i],
   ["/workspace/biaya-operasional", /Biaya Operasional/i],
 ];
 

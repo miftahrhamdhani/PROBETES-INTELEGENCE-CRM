@@ -29,11 +29,8 @@ export type TaskMenuTarget = { taskId: number; customerName: string; x: number; 
  * di sini karena checkbox header (SelectAllCheckbox) sudah menyediakan itu —
  * satu mekanisme, bukan dua cara berbeda untuk hal yang sama.
  *
- * "Hapus" di sini berarti status -> CANCELLED (bukan DELETE baris crm_tasks):
- * task tidak pernah dihapus permanen di sistem ini (crm_task_history terhubung
- * ON DELETE CASCADE — hard-delete akan membuang jejak audit juga). Task
- * Dibatalkan otomatis hilang dari tampilan default (lihat buildConditions di
- * tasks.ts) tapi tetap bisa dilihat & dipulihkan lewat filter Status.
+ * "Hapus" menghapus task, bukan customer. Customer tetap tersedia di halaman
+ * Customer dan dapat dimasukkan lagi ke Pembagian Tugas kapan saja.
  */
 export function TaskRowMenu({
   target,
@@ -80,8 +77,7 @@ export function TaskRowMenu({
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus task {confirmTarget?.customerName} dari Pembagian Tugas?</AlertDialogTitle>
             <AlertDialogDescription>
-              Task dibatalkan dan hilang dari daftar ini. Tidak dihapus permanen — tetap bisa dilihat dan dipulihkan
-              lewat filter Status &quot;Dibatalkan&quot;.
+              Task dipindahkan ke Riwayat Hapus dan masih bisa dipulihkan. Data customer tidak berubah.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

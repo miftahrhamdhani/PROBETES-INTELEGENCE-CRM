@@ -12,12 +12,15 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { crmReports, crmTasks } from "@/server/db/schema";
 import {
   BULK_STATUS_TARGETS,
+  WORKSPACE_TASK_TAB_STATUSES,
   assignTaskSchema,
   bulkStatusSchema,
+  bulkTaskTypeSchema,
   canTransitionStatus,
   completeTaskSchema,
   createTaskSchema,
   createTasksBulkSchema,
+  taskIdsSchema,
   type CrmTaskStatus,
 } from "@/lib/workspace-contracts";
 
@@ -94,6 +97,21 @@ describe("Workspace — validasi Zod", () => {
     expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "DONE" }).success).toBe(false);
     expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "ASSIGNED" }).success).toBe(true);
     expect(bulkStatusSchema.safeParse({ taskIds: [1, 2], status: "IN_PROGRESS" }).success).toBe(true);
+  });
+
+  it("Riwayat Hapus hanya memuat status CANCELLED", () => {
+    expect(WORKSPACE_TASK_TAB_STATUSES.trash).toEqual(["CANCELLED"]);
+  });
+
+  it("jenis tugas massal hanya menerima jenis manual", () => {
+    expect(bulkTaskTypeSchema.safeParse({ taskIds: [1, 2], taskType: "BROADCAST" }).success).toBe(true);
+    expect(bulkTaskTypeSchema.safeParse({ taskIds: [1, 2], taskType: "FOLLOW_UP_NEW_CUSTOMER" }).success).toBe(false);
+  });
+
+  it("hapus massal wajib punya task ID valid", () => {
+    expect(taskIdsSchema.safeParse({ taskIds: [1, 2] }).success).toBe(true);
+    expect(taskIdsSchema.safeParse({ taskIds: [] }).success).toBe(false);
+    expect(taskIdsSchema.safeParse({ taskIds: ["1"] }).success).toBe(false);
   });
 
   it("completeTaskSchema wajib outcome", () => {

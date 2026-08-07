@@ -36,6 +36,9 @@ export const CRM_PERMISSIONS = [
   "crm.product.create",
   "crm.product.update",
   "crm.product.deactivate",
+  "crm.product.alias.manage",
+  "crm.product.audit.read",
+  "crm.product.export",
   "crm.com.read",
   "crm.com.create",
   "crm.com.update_own_draft",
@@ -64,6 +67,9 @@ const ADMIN_ONLY = new Set<CrmPermission>([
   "crm.product.create",
   "crm.product.update",
   "crm.product.deactivate",
+  "crm.product.alias.manage",
+  "crm.product.audit.read",
+  "crm.product.export",
 ]);
 const CRM_MUTATIONS = new Set<CrmPermission>([
   "crm.manual_order.create",

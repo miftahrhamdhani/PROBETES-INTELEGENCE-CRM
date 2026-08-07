@@ -70,12 +70,12 @@ test("ukur navigasi antar fitur workspace", async ({ page }) => {
     await page.waitForURL("**/workspace/pembagian-tugas**");
   });
 
-  await measure(page, "Pembagian Tugas -> Master Data (client nav)", async () => {
-    await page.getByRole("link", { name: "Master Data", exact: true }).first().click();
-    await page.waitForURL("**/workspace/master-data**");
+  await measure(page, "Pembagian Tugas -> Master Produk (client nav)", async () => {
+    await page.getByRole("link", { name: "Master Produk", exact: true }).first().click();
+    await page.waitForURL("**/workspace/master-produk**");
   });
 
-  await measure(page, "Master Data -> Biaya Operasional (client nav)", async () => {
+  await measure(page, "Master Produk -> Biaya Operasional (client nav)", async () => {
     await page.getByRole("link", { name: "Biaya Operasional", exact: true }).first().click();
     await page.waitForURL("**/workspace/biaya-operasional**");
   });

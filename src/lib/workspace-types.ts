@@ -13,6 +13,8 @@ export type WorkspaceTaskRow = {
   customerPhone: string;
   firstOrderDate: string | null;
   firstProductName: string | null;
+  /** Sumber/channel closing pertama customer (division order pertama dari Database All). */
+  firstOrderDivision: string | null;
   clusterCode: ClusterAssignmentCode | null;
   membershipStatus: MembershipStatusValue;
   taskType: CrmTaskType;
@@ -24,6 +26,8 @@ export type WorkspaceTaskRow = {
   dueAt: string | null;
   completedAt: string | null;
   notes: string | null;
+  deletedFromStatus: CrmTaskStatus | null;
+  deletedAt: string | null;
   overdue: boolean;
   createdAt: string;
 };
@@ -86,6 +90,7 @@ export type WorkspaceOverviewKpi = {
   overdue: number;
   closing: number;
   joinedGroup: number;
+  deleted: number;
 };
 
 export type WorkspaceOverview = {

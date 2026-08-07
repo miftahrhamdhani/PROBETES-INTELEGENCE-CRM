@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { Clock } from "lucide-react";
 import { PageTransition } from "@/components/motion/page-transition";
+import { cn } from "@/lib/utils";
 import type { ActiveDatasetInfo } from "@/lib/dataset-types";
 import type { UserRole } from "@/lib/roles";
 import { AppSidebar, SIDEBAR_OPEN_KEY } from "./app-sidebar";
@@ -17,11 +19,17 @@ export function AppShellClient({
   children,
   dataset,
   sessionUser,
+  prominentTitle = false,
+  breadcrumb,
 }: {
   title: string;
   children: ReactNode;
   dataset: ActiveDatasetInfo;
   sessionUser: ShellSessionUser;
+  /** Judul lebih besar + ikon jam pada baris tanggal — lihat AppShell. */
+  prominentTitle?: boolean;
+  /** Baris breadcrumb kecil di atas judul — lihat AppShell. */
+  breadcrumb?: ReactNode;
 }) {
   // Nilai tersimpan "true"/hilang = expanded, "false" = collapsed — sama makna
   // dengan versi lama (dulu "false" berarti sidebar disembunyikan total,
@@ -49,10 +57,14 @@ export function AppShellClient({
         <AppSidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} dataset={dataset} role={sessionUser?.role} />
         <main className="min-w-0 flex-1 p-4 xl:p-6">
           <div className="mx-auto max-w-[1600px]">
+            {breadcrumb ? <div className="mb-1">{breadcrumb}</div> : null}
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-              <p className="text-xs text-muted-foreground">
-                Data as of {formatDate(dataset.asOfDate)} · Analytics memakai order kanonik
+              <h1 className={cn("font-semibold tracking-tight", prominentTitle ? "text-2xl" : "text-lg")}>{title}</h1>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {prominentTitle ? <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
+                <span>
+                  Data {prominentTitle ? "per" : "as of"} {formatDate(dataset.asOfDate)} · Analytics memakai order kanonik
+                </span>
               </p>
             </div>
             <PageTransition>{children}</PageTransition>

@@ -277,6 +277,7 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
       group_name: string | null;
       pic_name: string | null;
       cs_names: string | null;
+      first_order_division: string | null;
       review_reason: string | null;
       is_new: boolean;
     }>(sql`
@@ -299,6 +300,12 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
           JOIN cs_agents a ON a.id = o.cs_id
           WHERE o.customer_id = c.id
         ) AS cs_names,
+        (
+          SELECT o.division FROM orders o
+          WHERE o.customer_id = c.id
+          ORDER BY o.order_date ASC, o.id ASC
+          LIMIT 1
+        ) AS first_order_division,
         CASE WHEN cc.cluster_code = 'NEEDS_REVIEW' THEN
           (SELECT string_agg(elem->>'label', '; ') FROM jsonb_array_elements(cc.reason->'checks') elem)
         ELSE NULL END AS review_reason,
@@ -346,6 +353,7 @@ export async function listCustomers(filter: CustomerListFilter): Promise<Custome
         groupName: row.group_name,
         picName: row.pic_name,
         csNames: row.cs_names ?? "—",
+        firstOrderDivision: row.first_order_division,
         reviewReason: row.review_reason,
         isNew: row.is_new,
       })
@@ -542,6 +550,7 @@ export async function getCustomerDetail(customerId: number): Promise<CustomerDet
       order_date: string;
       order_total: string;
       platform: string | null;
+      division: string | null;
       payment_method: string | null;
       cs_name: string | null;
       product_code: string;
@@ -555,6 +564,7 @@ export async function getCustomerDetail(customerId: number): Promise<CustomerDet
         o.order_date::text,
         o.order_total::text,
         o.platform,
+        o.division,
         o.payment_method,
         a.name AS cs_name,
         p.code AS product_code,
@@ -600,6 +610,7 @@ export async function getCustomerDetail(customerId: number): Promise<CustomerDet
       orderDate: item.order_date,
       orderTotal: item.order_total,
       platform: item.platform,
+      division: item.division,
       paymentMethod: item.payment_method,
       csName: item.cs_name,
       items: [],

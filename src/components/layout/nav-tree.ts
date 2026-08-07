@@ -77,7 +77,7 @@ export const NAV_TREE: NavNode[] = [
       { href: "/workspace/overview", label: "Overview", icon: SquareKanban },
       { href: "/workspace/pesanan", label: "Pesanan", icon: ClipboardList },
       { href: "/workspace/pembagian-tugas", label: "Pembagian Tugas", icon: ListTodo },
-      { href: "/workspace/master-data", label: "Master Data", icon: Package },
+      { href: "/workspace/master-produk", label: "Master Produk", icon: Package },
       { href: "/workspace/biaya-operasional", label: "Biaya Operasional", icon: Receipt },
     ],
   },
