@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreVertical } from "lucide-react";
+import { Eye, MoreVertical } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SelectAllCheckbox } from "@/components/data-table/select-all-checkbox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CLUSTER_LABELS, NON_CLUSTER_LABELS, type ClusterAssignmentCode } from "@/lib/cluster-codes";
 import { formatDate, formatRupiah } from "@/lib/format";
 import type { ClusterCustomerRow, CustomerListRow } from "@/lib/customer-types";
@@ -24,25 +24,30 @@ type RowActionOpts<T extends { customerId: number }> = {
   onOpenMenu: (row: T, x: number, y: number) => void;
 };
 
+/** Checkbox shadcn (sama komponen dengan Pembagian Tugas, lihat task-columns.tsx)
+ *  — bukan `<input>` polos lagi, supaya kotaknya tebal/jelas dan konsisten
+ *  desainnya di seluruh tabel data besar aplikasi. */
 function selectColumn<T extends { customerId: number }>(opts: RowActionOpts<T>): ColumnDef<T, any> {
   return {
     id: "select",
     header: () => (
-      <SelectAllCheckbox
-        allSelected={opts.allSelected}
-        someSelected={opts.someSelected}
-        onToggle={opts.onToggleAll}
-        ariaLabel="Pilih semua customer yang dimuat"
+      <Checkbox
+        checked={opts.allSelected}
+        indeterminate={opts.someSelected && !opts.allSelected}
+        onChange={opts.onToggleAll}
+        aria-label="Pilih semua customer yang dimuat"
       />
     ),
-    size: 36,
-    minSize: 36,
-    maxSize: 36,
+    // 16px (h-4 w-4) checkbox + 24px padding sel (px-3 kiri+kanan di DataTable)
+    // = 40px minimum — di bawah itu overflow-hidden+text-ellipsis pada <td>
+    // memotong checkbox dan menampilkan "…" di sampingnya (bukan bug data,
+    // murni css sempit). 44px kasih sedikit napas.
+    size: 44,
+    minSize: 44,
+    maxSize: 44,
     enableResizing: false,
     cell: ({ row }) => (
-      <input
-        type="checkbox"
-        className="h-3.5 w-3.5 cursor-pointer accent-primary"
+      <Checkbox
         checked={opts.selectedIds.has(row.original.customerId)}
         onClick={(e) => e.stopPropagation()}
         onChange={() => opts.onToggle(row.original.customerId)}
@@ -52,29 +57,39 @@ function selectColumn<T extends { customerId: number }>(opts: RowActionOpts<T>):
   };
 }
 
+/** Eye = buka detail langsung, MoreVertical = menu Copy/Masukkan ke Pembagian
+ *  Tugas/dsb (RowContextMenu). Dua tombol terpisah, sama seperti desain referensi. */
 function actionsColumn<T extends { customerId: number }>(opts: RowActionOpts<T>): ColumnDef<T, any> {
+  const { detailHref } = opts;
   return {
     id: "actions",
     header: "",
-    size: 40,
-    minSize: 40,
-    maxSize: 40,
+    size: 64,
+    minSize: 64,
+    maxSize: 64,
     enableResizing: false,
     cell: ({ row }) => (
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7"
-        aria-label="Menu aksi customer"
-        onClick={(e) => {
-          e.stopPropagation();
-          const rect = e.currentTarget.getBoundingClientRect();
-          opts.onOpenMenu(row.original, rect.left, rect.bottom + 4);
-        }}
-      >
-        <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
-      </Button>
+      <div className="flex items-center gap-0.5">
+        <Button asChild type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label="Lihat detail customer">
+          <Link href={detailHref(row.original.customerId)} onClick={(e) => e.stopPropagation()}>
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          aria-label="Menu aksi customer"
+          onClick={(e) => {
+            e.stopPropagation();
+            const rect = e.currentTarget.getBoundingClientRect();
+            opts.onOpenMenu(row.original, rect.left, rect.bottom + 4);
+          }}
+        >
+          <MoreVertical className="h-3.5 w-3.5" aria-hidden="true" />
+        </Button>
+      </div>
     ),
   };
 }

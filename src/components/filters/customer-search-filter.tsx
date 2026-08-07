@@ -72,71 +72,92 @@ export function CustomerSearchFilter({
   }, [search]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <label className="relative min-w-56 flex-1">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Cari nama atau nomor HP"
-          className="pl-8"
-        />
-      </label>
+    <div className="flex flex-wrap items-end gap-2">
+      <FilterField label="Cari nama atau nomor HP" className="min-w-56 flex-1">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Nama customer atau nomor HP..."
+            className="pl-8"
+          />
+        </label>
+      </FilterField>
       {showCsFilter ? (
+        <FilterField label="CS">
+          <select
+            aria-label="Filter CS"
+            className="h-9 rounded-md border bg-card px-3 text-xs"
+            value={searchParams.get("cs") ?? ""}
+            onChange={(event) => updateParam("cs", event.target.value)}
+          >
+            <option value="">Semua CS</option>
+            {csOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </FilterField>
+      ) : null}
+      <FilterField label="Cluster">
         <select
-          aria-label="Filter CS"
+          aria-label="Filter Cluster"
           className="h-9 rounded-md border bg-card px-3 text-xs"
-          value={searchParams.get("cs") ?? ""}
-          onChange={(event) => updateParam("cs", event.target.value)}
+          value={searchParams.get("cluster") ?? ""}
+          onChange={(event) => updateParam("cluster", event.target.value)}
         >
-          <option value="">Semua CS</option>
-          {csOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
+          <option value="">Semua Cluster</option>
+          {CLUSTER_OPTIONS.map(([code, label]) => (
+            <option key={code} value={code}>
+              {label}
             </option>
           ))}
         </select>
-      ) : null}
-      <select
-        aria-label="Filter Cluster"
-        className="h-9 rounded-md border bg-card px-3 text-xs"
-        value={searchParams.get("cluster") ?? ""}
-        onChange={(event) => updateParam("cluster", event.target.value)}
-      >
-        <option value="">Semua Cluster</option>
-        {CLUSTER_OPTIONS.map(([code, label]) => (
-          <option key={code} value={code}>
-            {label}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Filter Status Grup"
-        className="h-9 rounded-md border bg-card px-3 text-xs"
-        value={searchParams.get("membershipStatus") ?? ""}
-        onChange={(event) => updateParam("membershipStatus", event.target.value)}
-      >
-        <option value="">Semua Status Grup</option>
-        {(showConflictOption ? MEMBERSHIP_OPTIONS_WITH_CONFLICT : MEMBERSHIP_OPTIONS).map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label="Filter PIC"
-        className="h-9 rounded-md border bg-card px-3 text-xs"
-        value={searchParams.get("pic") ?? ""}
-        onChange={(event) => updateParam("pic", event.target.value)}
-      >
-        <option value="">Semua PIC</option>
-        {picOptions.map((pic) => (
-          <option key={pic.id} value={pic.name}>
-            {pic.name}
-          </option>
-        ))}
-      </select>
+      </FilterField>
+      <FilterField label="Status Grup">
+        <select
+          aria-label="Filter Status Grup"
+          className="h-9 rounded-md border bg-card px-3 text-xs"
+          value={searchParams.get("membershipStatus") ?? ""}
+          onChange={(event) => updateParam("membershipStatus", event.target.value)}
+        >
+          <option value="">Semua Status</option>
+          {(showConflictOption ? MEMBERSHIP_OPTIONS_WITH_CONFLICT : MEMBERSHIP_OPTIONS).map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </FilterField>
+      <FilterField label="PIC">
+        <select
+          aria-label="Filter PIC"
+          className="h-9 rounded-md border bg-card px-3 text-xs"
+          value={searchParams.get("pic") ?? ""}
+          onChange={(event) => updateParam("pic", event.target.value)}
+        >
+          <option value="">Semua PIC</option>
+          {picOptions.map((pic) => (
+            <option key={pic.id} value={pic.name}>
+              {pic.name}
+            </option>
+          ))}
+        </select>
+      </FilterField>
       <PendingIndicator show={isPending} />
+    </div>
+  );
+}
+
+/** Label kecil di atas tiap kontrol filter — murni presentasional, tidak
+ *  mengubah param/query apa pun (samakan dengan referensi desain Customers). */
+function FilterField({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
+  return (
+    <div className={className}>
+      <span className="mb-1 block text-[10px] font-medium text-muted-foreground">{label}</span>
+      {children}
     </div>
   );
 }

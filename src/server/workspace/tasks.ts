@@ -2,6 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
 import { withTransaction, type TransactionClient } from "@/server/db/transaction";
 import { recalculateClusterForCustomer } from "@/server/import/orchestrator";
+import { overdueCondition } from "@/server/workspace/date";
 import {
   canTransitionStatus,
   type CrmTaskStatus,
@@ -57,7 +58,7 @@ const TASK_ROW_SELECT = sql`
   t.assigned_at::text AS assigned_at, t.due_at::text AS due_at,
   t.completed_at::text AS completed_at, t.notes,
   t.deleted_from_status, t.deleted_at::text AS deleted_at,
-  (t.due_at IS NOT NULL AND t.due_at < CURRENT_DATE AND t.status NOT IN ('DONE','CANCELLED')) AS overdue,
+  ${overdueCondition("t")} AS overdue,
   t.created_at::text AS created_at
 `;
 
@@ -162,7 +163,7 @@ function buildConditions(filter: WorkspaceTaskListFilter): SQL[] {
   if (filter.dateFrom) conditions.push(sql`t.due_at >= ${filter.dateFrom}::date`);
   if (filter.dateTo) conditions.push(sql`t.due_at <= ${filter.dateTo}::date`);
   if (filter.overdueOnly) {
-    conditions.push(sql`t.due_at IS NOT NULL AND t.due_at < CURRENT_DATE AND t.status NOT IN ('DONE','CANCELLED')`);
+    conditions.push(overdueCondition("t"));
   }
 
   return conditions.length ? conditions : [sql`true`];

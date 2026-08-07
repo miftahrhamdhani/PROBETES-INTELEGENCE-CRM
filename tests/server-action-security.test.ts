@@ -106,7 +106,6 @@ const PII_ACTIONS: Array<[string, () => Promise<unknown>]> = [
   ["masterData.loadWorkspaceProductOptionsAction", () => masterData.loadWorkspaceProductOptionsAction()],
   ["masterData.loadWorkspaceProductAliasesAction", () => masterData.loadWorkspaceProductAliasesAction(1)],
   ["costs.loadWorkspaceCostsAction", () => costs.loadWorkspaceCostsAction({})],
-  ["costs.loadWorkspaceCostKpiAction", () => costs.loadWorkspaceCostKpiAction({})],
   ["costs.loadWorkspaceCostAction", () => costs.loadWorkspaceCostAction(1)],
   ["costs.createWorkspaceCostAction", () => costs.createWorkspaceCostAction(validCostBody)],
   ["costs.updateWorkspaceCostDraftAction", () => costs.updateWorkspaceCostDraftAction(1, validCostBody)],

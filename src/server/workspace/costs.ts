@@ -6,7 +6,6 @@ import type {
   WorkspaceCostCategory,
   WorkspaceCostDetail,
   WorkspaceCostFilter,
-  WorkspaceCostKpi,
   WorkspaceCostRow,
   WorkspaceCostStatus,
 } from "@/lib/workspace-cost-contracts";
@@ -33,15 +32,37 @@ function buildConditions(filter: WorkspaceCostFilter): SQL[] {
   if (filter.to) conditions.push(sql`c.cost_date <= ${filter.to}::date`);
   if (filter.category) conditions.push(sql`c.category = ${filter.category}::workspace_cost_category`);
   if (filter.status) conditions.push(sql`c.status = ${filter.status}::workspace_cost_status`);
-  if (filter.search?.trim()) conditions.push(sql`c.cost_name ILIKE ${"%" + filter.search.trim() + "%"}`);
+  if (filter.search?.trim()) {
+    const search = `%${filter.search.trim()}%`;
+    conditions.push(sql`(
+      c.cost_name ILIKE ${search}
+      OR c.vendor ILIKE ${search}
+      OR c.reference_number ILIKE ${search}
+      OR c.usage_period ILIKE ${search}
+    )`);
+  }
   return conditions;
 }
+
+const COST_SORT_SQL: Record<WorkspaceCostFilter["sort"], SQL> = {
+  cost_date: sql`c.cost_date`,
+  cost_name: sql`c.cost_name`,
+  category: sql`c.category`,
+  vendor: sql`c.vendor`,
+  amount: sql`c.amount`,
+  created_by_name: sql`creator.name`,
+  status: sql`c.status`,
+  created_at: sql`c.created_at`,
+  updated_at: sql`c.updated_at`,
+};
 
 export async function listWorkspaceCosts(filter: WorkspaceCostFilter): Promise<{ rows: WorkspaceCostRow[]; total: number }> {
   const conditions = buildConditions(filter);
   const where = conditions.length ? andAll(conditions) : sql`true`;
   const perPage = filter.perPage;
   const offset = (filter.page - 1) * perPage;
+  const sort = COST_SORT_SQL[filter.sort];
+  const direction = filter.order === "asc" ? sql`ASC` : sql`DESC`;
   // Count terpisah (bukan `COUNT(*) OVER()`) — lihat catatan di
   // listWorkspaceOrders: window count jadi 0 saat halaman di luar rentang.
   const [result, countResult] = await Promise.all([
@@ -51,17 +72,21 @@ export async function listWorkspaceCosts(filter: WorkspaceCostFilter): Promise<{
       cost_name: string;
       category: WorkspaceCostCategory;
       vendor: string | null;
+      usage_period: string | null;
+      payment_method: string | null;
+      reference_number: string | null;
       amount: string;
       created_by: number | null;
       created_by_name: string | null;
       status: WorkspaceCostStatus;
       proof_url: string | null;
     }>(sql`
-    SELECT c.id::int AS id, c.cost_date::text, c.cost_name, c.category::text AS category, c.vendor, c.amount::text,
+    SELECT c.id::int AS id, c.cost_date::text, c.cost_name, c.category::text AS category, c.vendor,
+      c.usage_period, c.payment_method, c.reference_number, c.amount::text,
       c.created_by, creator.name AS created_by_name, c.status::text AS status, c.proof_url
     FROM workspace_operational_costs c LEFT JOIN users creator ON creator.id = c.created_by
     WHERE ${where}
-    ORDER BY c.cost_date DESC, c.id DESC
+    ORDER BY ${sort} ${direction} NULLS LAST, c.id DESC
     LIMIT ${perPage} OFFSET ${offset}
   `),
     getDb().execute<{ total: string }>(sql`SELECT COUNT(*)::text AS total FROM workspace_operational_costs c WHERE ${where}`),
@@ -73,6 +98,9 @@ export async function listWorkspaceCosts(filter: WorkspaceCostFilter): Promise<{
       costName: row.cost_name,
       category: row.category,
       vendor: row.vendor,
+      usagePeriod: row.usage_period,
+      paymentMethod: row.payment_method,
+      referenceNumber: row.reference_number,
       amount: row.amount,
       createdBy: row.created_by,
       createdByName: row.created_by_name,
@@ -80,34 +108,6 @@ export async function listWorkspaceCosts(filter: WorkspaceCostFilter): Promise<{
       proofUrl: row.proof_url,
     })),
     total: Number(countResult.rows[0]?.total ?? 0),
-  };
-}
-
-export async function getWorkspaceCostKpi(filter: WorkspaceCostFilter): Promise<WorkspaceCostKpi> {
-  const conditions = buildConditions({ ...filter, status: undefined });
-  const where = conditions.length ? andAll(conditions) : sql`true`;
-  const result = await getDb().execute<{
-    total_approved: string;
-    com_broadcast: string;
-    com_software_tools: string;
-    com_ai: string;
-    pending_approval: string;
-  }>(sql`
-    SELECT
-      COALESCE(SUM(amount) FILTER (WHERE status = 'DIRECTOR_APPROVED'), 0)::text AS total_approved,
-      COALESCE(SUM(amount) FILTER (WHERE status = 'DIRECTOR_APPROVED' AND category = 'BROADCAST'), 0)::text AS com_broadcast,
-      COALESCE(SUM(amount) FILTER (WHERE status = 'DIRECTOR_APPROVED' AND category IN ('SOFTWARE_CRM','MEKARI_QONTAK')), 0)::text AS com_software_tools,
-      COALESCE(SUM(amount) FILTER (WHERE status = 'DIRECTOR_APPROVED' AND category = 'AI_CRM'), 0)::text AS com_ai,
-      COUNT(*) FILTER (WHERE status IN ('SUBMITTED','LEADER_VERIFIED','SPV_APPROVED'))::text AS pending_approval
-    FROM workspace_operational_costs c WHERE ${where}
-  `);
-  const row = result.rows[0];
-  return {
-    totalApproved: row?.total_approved ?? "0",
-    comBroadcast: row?.com_broadcast ?? "0",
-    comSoftwareTools: row?.com_software_tools ?? "0",
-    comAi: row?.com_ai ?? "0",
-    pendingApproval: Number(row?.pending_approval ?? 0),
   };
 }
 

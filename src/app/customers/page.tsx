@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { loadCsAgents, loadCustomerList, loadPics } from "@/app/customers-actions";
+import { loadCsAgents, loadCustomerList, loadMembershipSummary, loadPics } from "@/app/customers-actions";
 import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
 import { AppShell } from "@/components/layout/app-shell";
 import { CustomerSearchFilter } from "@/components/filters/customer-search-filter";
 import { DateRangeFilter } from "@/components/filters/date-range-filter";
 import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";
 import { BroadcastExportButton } from "@/components/customer/broadcast-export-button";
+import { CustomerKpiCards } from "@/components/customer/customer-kpi-cards";
 import { CustomerListTable } from "@/components/customer/customer-list-table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,12 +83,30 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   let initialData;
   let csOptions: string[];
   let picOptions: { id: number; name: string }[];
+  let kpis: { total: number; customerBaru: number; grouped: number; notGrouped: number; unknownOperational: number };
   try {
-    [initialData, csOptions, picOptions] = await Promise.all([
+    let baseline: { total: number };
+    let newCustomers: { total: number };
+    let membership;
+    [initialData, csOptions, picOptions, baseline, newCustomers, membership] = await Promise.all([
       loadCustomerList({ ...filter, page: 1, perPage: CUSTOMER_LIST_CHUNK }),
       loadCsAgents(),
       loadPics(),
+      // KPI Customers — SELALU populasi keseluruhan (bukan hasil filter tabel di
+      // bawahnya), sama seperti KPI tile GroupMembershipSummary di /groups.
+      // Sengaja pakai kembali loadCustomerList/loadMembershipSummary yang sudah
+      // ada (tidak ada query baru) — perPage:1 karena hanya `.total` yang dipakai.
+      loadCustomerList({ page: 1, perPage: 1 }),
+      loadCustomerList({ isNew: true, page: 1, perPage: 1 }),
+      loadMembershipSummary(),
     ]);
+    kpis = {
+      total: baseline.total,
+      customerBaru: newCustomers.total,
+      grouped: membership.grouped,
+      notGrouped: membership.notGrouped,
+      unknownOperational: membership.unknownOperational,
+    };
   } catch {
     return (
       <AppShell title="Customers">
@@ -159,41 +178,50 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   }
 
   return (
-    <AppShell title="Customers">
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle>{initialData.total.toLocaleString("id-ID")} customer</CardTitle>
-            <CardDescription>Klik baris untuk detail lengkap · scroll untuk memuat lebih banyak</CardDescription>
-          </div>
+    <AppShell title="Customers" prominentTitle>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Kelola seluruh data customer CRM. Gunakan filter dan pencarian untuk menemukan customer dengan cepat.
+          </p>
           {/* FR-24: export menghormati SELURUH filter aktif di halaman ini. */}
-          <BroadcastExportButton filter={filter} expectedRows={initialData.total} />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <CustomerSearchFilter csOptions={csOptions} picOptions={picOptions} />
-              <DateRangeFilter />
-              <NewCustomerToggle active={!!filter.isNew} params={params} />
-            </div>
-            {activeFilters.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {/* `next/link`, BUKAN <a>: <a> memicu full page reload — seluruh
-                    app shell, bundle, dan sesi dimuat ulang hanya untuk membuang
-                    satu filter. */}
-                {activeFilters.map((f) => (
-                  <Link key={f.label} href={f.clearHref} scroll={false}>
-                    <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
-                      {f.label} ✕
-                    </Badge>
-                  </Link>
-                ))}
+          <BroadcastExportButton filter={filter} expectedRows={initialData.total} label="Export broadcast" />
+        </div>
+
+        <CustomerKpiCards kpis={kpis} />
+
+        <Card>
+          <CardContent className="space-y-3 pt-5">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <CustomerSearchFilter csOptions={csOptions} picOptions={picOptions} />
+                <DateRangeFilter />
+                <NewCustomerToggle active={!!filter.isNew} params={params} />
               </div>
-            ) : null}
-          </div>
-          <CustomerListTable variant="customer" filter={filter} initialData={initialData} />
-        </CardContent>
-      </Card>
+              {activeFilters.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {/* `next/link`, BUKAN <a>: <a> memicu full page reload — seluruh
+                      app shell, bundle, dan sesi dimuat ulang hanya untuk membuang
+                      satu filter. */}
+                  {activeFilters.map((f) => (
+                    <Link key={f.label} href={f.clearHref} scroll={false}>
+                      <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
+                        {f.label} ✕
+                      </Badge>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-5">
+            <CustomerListTable variant="customer" filter={filter} initialData={initialData} picOptions={picOptions} />
+          </CardContent>
+        </Card>
+      </div>
 
       <CustomerDetailSheet picOptions={picOptions} />
     </AppShell>

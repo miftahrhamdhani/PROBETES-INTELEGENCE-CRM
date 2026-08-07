@@ -13,6 +13,11 @@ import {
   markWorkspacePesananReturnedAction,
   updateWorkspacePesananAction,
 } from "@/app/workspace-pesanan-actions";
+import {
+  toPesananItemPayload,
+  toPesananItemRows,
+  type PesananItemRow,
+} from "@/lib/workspace-pesanan-item-mapping";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -44,13 +49,10 @@ const STATUS_TARGET_LABELS: Record<WorkspaceOrderStatusChangeTarget, string> = {
   REFUNDED: "Refund",
 };
 
-type ItemRow = {
-  key: string;
-  rowKind: "SALE" | "BONUS_SAMPLE";
-  productInternalId: number | null;
-  itemType: WorkspaceItemType;
-  quantity: string;
-};
+/** Bentuk baris produk di form — definisinya (termasuk `existingItemId` untuk
+ *  BUG-W01) ada di lib/workspace-pesanan-item-mapping.ts supaya pemetaan
+ *  detail→form→payload bisa diuji tanpa merender komponen ini. */
+type ItemRow = PesananItemRow;
 
 let rowSeq = 0;
 function newRow(rowKind: ItemRow["rowKind"]): ItemRow {
@@ -128,13 +130,8 @@ function formFromDetail(detail: WorkspaceOrderDetail): FormState {
     crmUserId: detail.crmUserId ? String(detail.crmUserId) : "",
     salesType: detail.salesType ?? "",
     salesSource: detail.salesSource ?? "",
-    items: detail.items.map((item) => ({
-      key: `existing-${item.id}`,
-      rowKind: item.itemType === "SALE" ? "SALE" : "BONUS_SAMPLE",
-      productInternalId: item.productInternalId,
-      itemType: item.itemType,
-      quantity: item.quantity,
-    })),
+    // Identitas baris DB dibawa apa adanya — lihat catatan di ItemRow.
+    items: toPesananItemRows(detail.items),
     shippingCharge: detail.shippingCharge,
     packingCharge: detail.packingCharge,
     discount: detail.discount,
@@ -259,7 +256,10 @@ export function PesananForm({
         crmUserId: Number(form.crmUserId),
         salesType: form.salesType || null,
         salesSource: form.salesSource || null,
-        items: validItems.map((item) => ({ productInternalId: item.productInternalId!, itemType: item.itemType, quantity: num(item.quantity) })),
+        // `id` HANYA disertakan untuk item yang sudah tersimpan di DB — lihat
+        // toPesananItemPayload(). Frontend TIDAK pernah mengirim harga/HPP;
+        // snapshot sepenuhnya ditentukan backend.
+        items: toPesananItemPayload(validItems, num),
         shippingCharge: num(form.shippingCharge),
         packingCharge: num(form.packingCharge),
         discount: num(form.discount),

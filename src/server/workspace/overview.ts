@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
+import { overdueCondition } from "@/server/workspace/date";
 import type { CrmUserOption, WorkspaceOverview, WorkspacePicSummaryRow } from "@/lib/workspace-types";
 
 const HAS_ACTIVE_DATASET = sql`
@@ -32,8 +33,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
         (SELECT COUNT(*) FROM crm_tasks WHERE status = 'ASSIGNED')::text AS assigned,
         (SELECT COUNT(*) FROM crm_tasks WHERE status = 'IN_PROGRESS')::text AS in_progress,
         (SELECT COUNT(*) FROM crm_tasks WHERE status = 'DONE')::text AS done,
-        (SELECT COUNT(*) FROM crm_tasks
-          WHERE due_at IS NOT NULL AND due_at < CURRENT_DATE AND status NOT IN ('DONE','CANCELLED'))::text AS overdue,
+        (SELECT COUNT(*) FROM crm_tasks WHERE ${overdueCondition("crm_tasks")})::text AS overdue,
         (SELECT COUNT(*) FROM crm_tasks WHERE outcome = 'CLOSING')::text AS closing,
         (SELECT COUNT(*) FROM crm_tasks WHERE outcome = 'JOINED_GROUP')::text AS joined_group,
         (SELECT COUNT(*) FROM crm_tasks WHERE status = 'CANCELLED')::text AS deleted
@@ -57,7 +57,7 @@ export async function getWorkspaceOverview(): Promise<WorkspaceOverview> {
         COUNT(*) FILTER (WHERE t.status = 'ASSIGNED')::text AS assigned,
         COUNT(*) FILTER (WHERE t.status = 'IN_PROGRESS')::text AS in_progress,
         COUNT(*) FILTER (WHERE t.status = 'DONE')::text AS done,
-        COUNT(*) FILTER (WHERE t.due_at IS NOT NULL AND t.due_at < CURRENT_DATE AND t.status NOT IN ('DONE','CANCELLED'))::text AS overdue,
+        COUNT(*) FILTER (WHERE ${overdueCondition("t")})::text AS overdue,
         COUNT(*) FILTER (WHERE t.outcome = 'CLOSING')::text AS closing,
         COUNT(*) FILTER (WHERE t.outcome = 'JOINED_GROUP')::text AS joined_group,
         COUNT(*) FILTER (WHERE t.status = 'CANCELLED')::text AS deleted,

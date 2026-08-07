@@ -70,3 +70,8 @@ export function SheetDescription({ className, ...props }: React.ComponentPropsWi
 export function SheetBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("scrollbar-thin flex-1 overflow-y-auto px-5 py-4", className)} {...props} />;
 }
+/** Sticky di bawah panel (di luar area scroll SheetBody) — dipakai form panjang
+ *  supaya tombol aksi utama selalu terjangkau tanpa scroll ke akhir. */
+export function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn("flex items-center justify-end gap-2 border-t bg-card px-5 py-3", className)} {...props} />;
+}

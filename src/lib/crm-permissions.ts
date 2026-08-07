@@ -49,6 +49,7 @@ export const CRM_PERMISSIONS = [
   "crm.com.request_revision",
   "crm.com.reject",
   "crm.com.cancel",
+  "crm.com.export",
   "crm.audit.read",
 ] as const;
 
@@ -101,6 +102,7 @@ const CRM_MUTATIONS = new Set<CrmPermission>([
   "crm.com.request_revision",
   "crm.com.reject",
   "crm.com.cancel",
+  "crm.com.export",
 ]);
 
 /**

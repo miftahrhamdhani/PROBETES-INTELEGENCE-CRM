@@ -46,6 +46,14 @@ const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal harus YY
 const money = z.coerce.number().int().min(0);
 
 export const workspaceOrderItemBodySchema = z.object({
+  /** BUG-W01 — id baris `workspace_order_items` yang SUDAH ADA, dikirim saat
+   *  EDIT supaya backend bisa membedakan "item lama" dari "item baru".
+   *  Item lama mempertahankan snapshot harga/HPP-nya (transaksi historis tidak
+   *  boleh berubah gara-gara Master Produk diedit); hanya item baru / item yang
+   *  produknya diganti yang mengambil harga Master Produk terkini.
+   *  Opsional: create tidak mengirimnya, dan form lama yang belum mengirim id
+   *  tetap diterima (perilakunya sama seperti sebelum perbaikan). */
+  id: z.coerce.number().int().positive().optional(),
   productInternalId: z.coerce.number().int().positive(),
   itemType: z.enum(WORKSPACE_ITEM_TYPES),
   quantity: z.coerce.number().int().positive(),

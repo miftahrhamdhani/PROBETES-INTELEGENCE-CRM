@@ -8,7 +8,6 @@ import {
   createWorkspaceCost,
   decideWorkspaceCost,
   getWorkspaceCost,
-  getWorkspaceCostKpi,
   listWorkspaceCosts,
   submitWorkspaceCost,
   updateWorkspaceCostDraft,
@@ -17,11 +16,6 @@ import {
 export async function loadWorkspaceCostsAction(input: unknown) {
   await requireCrmPermission("crm.com.read");
   return listWorkspaceCosts(workspaceCostFilterSchema.parse(input ?? {}));
-}
-
-export async function loadWorkspaceCostKpiAction(input: unknown) {
-  await requireCrmPermission("crm.com.read");
-  return getWorkspaceCostKpi(workspaceCostFilterSchema.parse(input ?? {}));
 }
 
 export async function loadWorkspaceCostAction(id: number) {

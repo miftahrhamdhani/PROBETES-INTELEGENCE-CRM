@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { type ColumnDef, type VisibilityState, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,6 +39,9 @@ export interface DataTableProps<T> {
     candidateIds: ReadonlySet<string>;
     onCandidateIdsChange: (ids: Set<string>) => void;
   };
+  /** "Tampilan Kolom" — show/hide kolom opsional. Kolom wajib (mis. No HP, Nama,
+   *  Cluster, Status Grup, Aksi) tidak boleh dimasukkan ke sini oleh pemanggil. */
+  columnVisibility?: VisibilityState;
 }
 
 /**
@@ -61,22 +64,26 @@ export function DataTable<T>({
   onRowClick,
   onRowContextMenu,
   marqueeSelection,
+  columnVisibility,
 }: DataTableProps<T>) {
-  const numberedColumns = React.useMemo<ColumnDef<T, any>[]>(
-    () => [
-      {
-        id: "__rowNumber",
-        header: "No.",
-        size: 56,
-        minSize: 44,
-        maxSize: 90,
-        enableResizing: false,
-        cell: ({ row }) => <span className="tabular text-muted-foreground">{row.index + 1}</span>,
-      },
-      ...columns,
-    ],
-    [columns]
-  );
+  const numberedColumns = React.useMemo<ColumnDef<T, any>[]>(() => {
+    const rowNumberColumn: ColumnDef<T, any> = {
+      id: "__rowNumber",
+      header: "No.",
+      size: 56,
+      minSize: 44,
+      maxSize: 90,
+      enableResizing: false,
+      cell: ({ row }) => <span className="tabular text-muted-foreground">{row.index + 1}</span>,
+    };
+    // Kolom checkbox ("select") harus jadi kolom TERLUAR (paling kiri) — "No."
+    // disisipkan SETELAHNYA, bukan selalu di depan. Tanpa ini "No." menyalip
+    // checkbox dan urutannya jadi No./checkbox/data, beda dari pola Pembagian
+    // Tugas (checkbox/No./data) yang jadi acuan desain tabel customer.
+    const selectIndex = columns.findIndex((c) => c.id === "select");
+    if (selectIndex === -1) return [rowNumberColumn, ...columns];
+    return [...columns.slice(0, selectIndex + 1), rowNumberColumn, ...columns.slice(selectIndex + 1)];
+  }, [columns]);
 
   const table = useReactTable({
     data: rows,
@@ -85,6 +92,7 @@ export function DataTable<T>({
     getRowId: (row, index) => String(rowKey(row, index)),
     columnResizeMode: "onChange",
     defaultColumn: { size: 150, minSize: 70, maxSize: 520 },
+    state: columnVisibility ? { columnVisibility } : undefined,
   });
 
   const parentRef = React.useRef<HTMLDivElement>(null);

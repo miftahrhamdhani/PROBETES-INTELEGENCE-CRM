@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { eq, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
@@ -92,6 +93,69 @@ async function resolveOrderItems(client: TransactionClient, items: WorkspaceOrde
   });
 }
 
+/**
+ * BUG-W01 — snapshot pesanan HISTORIS harus kebal terhadap perubahan Master Produk.
+ *
+ * `resolveOrderItems()` di atas SELALU membaca harga/HPP Master Produk TERKINI.
+ * Itu benar untuk item BARU, tapi salah untuk item yang sudah ada: mengedit memo
+ * atau alamat sebuah pesanan lama akan ikut menulis ulang selling_price_snapshot
+ * dan unit_hpp_snapshot dengan harga hari ini, sehingga COS dan Total Sales
+ * periode yang sudah lewat berubah diam-diam.
+ *
+ * Aturan yang dipakai di sini:
+ *   - item lama (id dikirim) DAN produknya tidak diganti  -> PERTAHANKAN snapshot lama
+ *   - item baru, ATAU produk diganti ke produk lain       -> ambil snapshot Master Produk saat ini
+ *
+ * qty dan item_type boleh berubah: nilai turunan (total_sales_value/total_hpp)
+ * dihitung ulang oleh insertItems() memakai snapshot UNIT yang dipertahankan,
+ * bukan harga baru. Item yang dihapus user tetap hilang (tidak ikut dikirim).
+ */
+async function resolveOrderItemsPreservingSnapshots(
+  client: TransactionClient,
+  items: WorkspaceOrderItemBody[],
+  orderId: number
+): Promise<ResolvedItem[]> {
+  const existing = await client.query<{
+    id: number;
+    product_id: number;
+    selling_price_snapshot: string;
+    unit_hpp_snapshot: string;
+  }>(
+    `SELECT id, product_id, selling_price_snapshot::text, unit_hpp_snapshot::text
+     FROM workspace_order_items WHERE order_id = $1`,
+    [orderId]
+  );
+  const existingById = new Map(existing.rows.map((row) => [row.id, row]));
+
+  const fresh = await resolveOrderItems(client, items);
+
+  return fresh.map((resolved, index) => {
+    const body = items[index]!;
+    const previous = body.id === undefined ? undefined : existingById.get(body.id);
+    // Produk diganti -> harus pakai snapshot produk BARU, bukan snapshot lama.
+    if (!previous || previous.product_id !== resolved.productInternalId) return resolved;
+
+    // BONUS/SAMPLE menyimpan selling_price_snapshot = 0 (semantik existing di
+    // resolveOrderItems), jadi baris yang dulu bonus tidak punya snapshot harga
+    // yang bisa dipakai saat diubah menjadi SALE — untuk kasus itu saja harga
+    // Master Produk saat ini dipakai. HPP selalu punya snapshot dan selalu
+    // dipertahankan.
+    const previousSellingPrice = BigInt(previous.selling_price_snapshot);
+    const sellingPriceSnapshot =
+      resolved.itemType === "SALE"
+        ? previousSellingPrice > 0n
+          ? previousSellingPrice
+          : resolved.sellingPriceSnapshot
+        : 0n;
+
+    return {
+      ...resolved,
+      sellingPriceSnapshot,
+      unitHppSnapshot: BigInt(previous.unit_hpp_snapshot),
+    };
+  });
+}
+
 /** Best-effort match by phone ke `customers` (registry identitas lintas modul)
  *  — nullable, murni untuk traceability, bukan sumber data pesanan itu sendiri. */
 async function resolveCustomerId(client: TransactionClient, normalizedPhone: string): Promise<number | null> {
@@ -177,7 +241,12 @@ export async function createWorkspaceOrder(
       const [inserted] = await db
         .insert(workspaceOrders)
         .values({
-          orderNumber: `PENDING-${Date.now()}`,
+          // BUG-W02: nomor SEMENTARA harus unik mutlak — `order_number` punya
+          // UNIQUE index, dan `Date.now()` bertabrakan kalau dua pesanan dibuat
+          // pada milidetik yang sama. UUID menghilangkan peluang itu tanpa
+          // mengubah format nomor FINAL (tetap PSN-000123, di-set tepat setelah
+          // insert dalam transaction yang sama).
+          orderNumber: `PENDING-${randomUUID()}`,
           sourceType: "MANUAL",
           sourceOrderId,
           deterministicFingerprint: fingerprint,
@@ -268,7 +337,8 @@ export async function updateWorkspaceOrder(id: number, body: WorkspaceOrderBody,
       // menolak baris yang sudah dihapus (deleted_at IS NULL).
       const order = await loadOrderForUpdate(client, id);
 
-      const resolvedItems = await resolveOrderItems(client, body.items);
+      // BUG-W01: pakai resolver yang MEMPERTAHANKAN snapshot item lama.
+      const resolvedItems = await resolveOrderItemsPreservingSnapshots(client, body.items, id);
       const crmUser = await client.query<{ name: string }>(`SELECT name FROM users WHERE id = $1 AND active = true`, [body.crmUserId]);
       if (!crmUser.rows[0]) throw new WorkspaceOrderValidationError("Nama CRM tidak ditemukan atau tidak aktif");
       const crmName = crmUser.rows[0].name;

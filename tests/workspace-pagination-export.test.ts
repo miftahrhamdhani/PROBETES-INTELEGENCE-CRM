@@ -13,7 +13,10 @@ import { workspaceProductFilterSchema } from "@/lib/workspace-master-data-contra
  * angka export tidak boleh dipakai lewat parse.
  */
 describe("kontrak filter export workspace", () => {
-  const exportSchemas = [["workspaceOrderFilterSchema", workspaceOrderFilterSchema]] as const;
+  const exportSchemas = [
+    ["workspaceOrderFilterSchema", workspaceOrderFilterSchema],
+    ["workspaceCostFilterSchema", workspaceCostFilterSchema],
+  ] as const;
 
   it("angka export melebihi batas perPage skema — wajib ditimpa SETELAH parse", () => {
     for (const [name, schema] of exportSchemas) {
@@ -47,10 +50,10 @@ describe("default pagination tabel workspace", () => {
     expect(filter.perPage).toBe(50);
   });
 
-  it("Biaya Operasional default 50 baris", () => {
+  it("Biaya Operasional default 10 baris sesuai desain", () => {
     const filter = workspaceCostFilterSchema.parse({});
     expect(filter.page).toBe(1);
-    expect(filter.perPage).toBe(50);
+    expect(filter.perPage).toBe(10);
   });
 
   it("Master Produk default 10 baris sesuai desain", () => {
