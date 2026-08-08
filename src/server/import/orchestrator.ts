@@ -451,14 +451,23 @@ async function bulkUpsertOrders(
          transaction_status::crm_transaction_status, is_crm, inclusion_reason, mapping_version,
          city, hub, sales_type, shipping::bigint, packing::bigint, discount::bigint, admin_cod::bigint,
          marketing::bigint, closing_count, now()
+       -- URUTAN CAST WAJIB SEJAJAR DENGAN DAFTAR ALIAS DI BAWAHNYA.
+       -- Regresi yang pernah terjadi (commit 026768a): kolom workspace_total
+       -- disisipkan di posisi ke-5 tanpa menggeser daftar cast, sehingga
+       -- partner (text) kebagian ::int[] dan cs_id (integer) kebagian
+       -- ::text[] -- import gagal dengan "column cs_id is of type integer but
+       -- expression is of type text". Kalau menambah kolom lagi, sisipkan cast
+       -- pada POSISI yang sama dengan aliasnya. Dijaga oleh
+       -- tests/import-order-column-alignment.test.ts.
        FROM unnest(
-         $1::text[], $2::int[], $3::text[], $4::text[], $5::text[], $6::text[],
-         $7::text[], $8::text[], $9::int[], $10::text[], $11::text[], $12::text[],
+         $1::text[],  $2::int[],   $3::text[],  $4::text[],  $5::text[],  $6::text[],
+         $7::text[],  $8::text[],  $9::text[],  $10::int[],  $11::text[], $12::text[],
          $14::text[], $15::bool[], $16::text[], $17::text[], $18::text[], $19::text[],
          $20::text[], $21::text[], $22::text[], $23::text[], $24::text[], $25::text[], $26::int[]
-       ) AS t(key, customer_id, order_date, total, workspace_total, platform, division, payment_method,
-         partner, cs_id, memo, fingerprint, transaction_status, is_crm, inclusion_reason, mapping_version,
-         city, hub, sales_type, shipping, packing, discount, admin_cod, marketing, closing_count)
+       ) AS t(key,     customer_id, order_date,  total,       workspace_total, platform,
+         division,     payment_method, partner,  cs_id,       memo,        fingerprint,
+         transaction_status, is_crm,  inclusion_reason, mapping_version, city, hub,
+         sales_type,   shipping,    packing,     discount,    admin_cod,   marketing, closing_count)
        ON CONFLICT (source_order_key) DO UPDATE SET
          customer_id = EXCLUDED.customer_id,
          order_date = EXCLUDED.order_date,
