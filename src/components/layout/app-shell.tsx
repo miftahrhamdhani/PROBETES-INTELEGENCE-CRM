@@ -26,12 +26,15 @@ export async function AppShell({
   children,
   prominentTitle = false,
   breadcrumb,
+  hidePageHeader = false,
 }: {
   title: string;
   children: ReactNode;
   prominentTitle?: boolean;
   /** Opsional: baris breadcrumb kecil di atas judul (mis. "Workspace CRM > Master Produk"). */
   breadcrumb?: ReactNode;
+  /** Dashboard yang merender header sendiri dapat menyembunyikan header shell. */
+  hidePageHeader?: boolean;
 }) {
   const [dataset, sessionUser] = await Promise.all([
     getActiveDatasetInfo().catch(() => ({
@@ -43,7 +46,7 @@ export async function AppShell({
     getShellSessionUser(),
   ]);
   return (
-    <AppShellClient title={title} dataset={dataset} sessionUser={sessionUser} prominentTitle={prominentTitle} breadcrumb={breadcrumb}>
+    <AppShellClient title={title} dataset={dataset} sessionUser={sessionUser} prominentTitle={prominentTitle} breadcrumb={breadcrumb} hidePageHeader={hidePageHeader}>
       {children}
     </AppShellClient>
   );

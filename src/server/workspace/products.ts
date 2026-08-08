@@ -2,6 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/server/db/client";
 import { withTransaction, type TransactionClient } from "@/server/db/transaction";
 import { activeGenerationCondition, notDeletedCondition } from "@/server/workspace/generation";
+import { workspaceManualOrderScope } from "@/server/workspace/provenance";
 import type { WorkspaceItemType } from "@/lib/workspace-pesanan-contracts";
 import {
   type WorkspaceProductAliasRow,
@@ -140,7 +141,7 @@ export async function listWorkspaceProducts(filter: WorkspaceProductFilter): Pro
         SELECT i.product_id, COUNT(DISTINCT i.order_id)::int AS usage_count
         FROM workspace_order_items i
         JOIN workspace_orders o ON o.id = i.order_id
-        WHERE ${activeGenerationCondition("o")} AND ${notDeletedCondition("o")}
+        WHERE ${workspaceManualOrderScope("o")} AND ${activeGenerationCondition("o")} AND ${notDeletedCondition("o")}
         GROUP BY i.product_id
       ) usage_stats ON usage_stats.product_id = p.id
       WHERE ${where}
@@ -472,6 +473,7 @@ export async function listWorkspaceProductUsage(
       FROM workspace_order_items i
       JOIN workspace_orders o ON o.id = i.order_id
       WHERE i.product_id = ${productInternalId}
+        AND ${workspaceManualOrderScope("o")}
         AND ${activeGenerationCondition("o")}
         AND ${notDeletedCondition("o")}
       ORDER BY o.order_date DESC, o.id DESC
@@ -482,6 +484,7 @@ export async function listWorkspaceProductUsage(
       FROM workspace_order_items i
       JOIN workspace_orders o ON o.id = i.order_id
       WHERE i.product_id = ${productInternalId}
+        AND ${workspaceManualOrderScope("o")}
         AND ${activeGenerationCondition("o")}
         AND ${notDeletedCondition("o")}
     `),

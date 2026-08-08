@@ -162,7 +162,7 @@ describe("BUG-W03 — PARTIALLY_REFUNDED tidak boleh hilang dari Overview", () =
 
   it("refund mengurangi pendapatan, TIDAK mengurangi COS", () => {
     expect(src).toContain("refundDeductionForPeriod");
-    expect(src).toContain("calculatePendapatanBersih(totalSales, cos, com) - refund");
+    expect(src).toContain("calculatePendapatanBersih(gross, cos, com) - refund");
     // COS tetap SUM(total_hpp) tanpa penyesuaian proporsional refund.
     expect(src).not.toMatch(/total_hpp[^\n]*refund_amount/);
   });

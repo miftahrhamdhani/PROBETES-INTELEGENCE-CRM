@@ -10,6 +10,7 @@ import { allowedItemTypesForUsage } from "@/lib/workspace-product-seed";
 import { calculateAov, calculateWorkspaceOrder } from "@/lib/workspace-pesanan-calculation";
 import { getApprovedComForPeriod } from "@/server/workspace/costs";
 import { activeGenerationCondition, notDeletedCondition } from "@/server/workspace/generation";
+import { WORKSPACE_ORDER_SOURCE_TYPE, workspaceManualOrderScope } from "@/server/workspace/provenance";
 import { WORKSPACE_RETUR_REFUND_STATUSES } from "@/lib/workspace-pesanan-contracts";
 import type {
   WorkspaceItemType,
@@ -315,9 +316,15 @@ async function loadOrderForUpdate(client: TransactionClient, id: number) {
   // WorkspaceOrderNotFoundError, tanpa perlu diulang di tiap fungsi pemanggil.
   // `source_order_id` ikut diambil supaya confirmWorkspaceOrder bisa mewajibkan
   // No Order/ID Pesanan Everpro terisi sebelum status boleh jadi CONFIRMED.
+  // `source_type` = WORKSPACE_ORDER_SOURCE_TYPE menutup sisi TULIS dari batas
+  // domain: baris berprovenance DATABASE_ALL tidak bisa dibuka detailnya, jadi
+  // juga tidak boleh bisa diubah/dikonfirmasi/dihapus lewat server action yang
+  // menerima id mentah. Barisnya tetap utuh di database (tidak disentuh sama
+  // sekali) — lihat src/server/workspace/provenance.ts.
   const result = await client.query<{ id: number; status: WorkspaceOrderStatus; order_total: string; source_order_id: string | null }>(
-    `SELECT id, status, order_total::text, source_order_id FROM workspace_orders WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
-    [id]
+    `SELECT id, status, order_total::text, source_order_id FROM workspace_orders
+     WHERE id = $1 AND source_type = $2 AND deleted_at IS NULL FOR UPDATE`,
+    [id, WORKSPACE_ORDER_SOURCE_TYPE]
   );
   const row = result.rows[0];
   if (!row) throw new WorkspaceOrderNotFoundError();
@@ -602,9 +609,12 @@ export async function deleteWorkspaceOrder(id: number, actorId: number, reason: 
 }
 
 function buildOrderConditions(filter: WorkspaceOrderFilter): SQL[] {
-  // Generation aktif + belum dihapus SELALU jadi kondisi pertama — daftar, KPI,
-  // dan export semuanya lewat sini, jadi tidak ada jalur yang bisa lupa memfilternya.
-  const conditions: SQL[] = [activeGenerationCondition("o"), notDeletedCondition("o")];
+  // Provenance Workspace + generation aktif + belum dihapus SELALU jadi kondisi
+  // pertama — daftar, KPI, dan export semuanya lewat sini, jadi tidak ada jalur
+  // yang bisa lupa memfilternya. workspaceManualOrderScope() membuang baris
+  // berprovenance DATABASE_ALL (domain Analysis, bukan Workspace Pesanan);
+  // barisnya tetap ada di database untuk audit, cuma tidak pernah terbaca.
+  const conditions: SQL[] = [workspaceManualOrderScope("o"), activeGenerationCondition("o"), notDeletedCondition("o")];
   if (filter.from) conditions.push(sql`o.order_date >= ${filter.from}::date`);
   if (filter.to) conditions.push(sql`o.order_date <= ${filter.to}::date`);
   if (filter.customer?.trim()) {
@@ -708,7 +718,8 @@ export async function getWorkspaceOrder(id: number): Promise<WorkspaceOrderDetai
     getDb().execute<Record<string, unknown>>(sql`
       SELECT o.*, creator.name AS created_by_name
       FROM workspace_orders o LEFT JOIN users creator ON creator.id = o.created_by
-      WHERE o.id = ${id} AND ${activeGenerationCondition("o")} AND ${notDeletedCondition("o")}
+      WHERE o.id = ${id} AND ${workspaceManualOrderScope("o")}
+        AND ${activeGenerationCondition("o")} AND ${notDeletedCondition("o")}
     `),
     getDb().execute<{
       id: number;

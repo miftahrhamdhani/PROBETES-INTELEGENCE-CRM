@@ -43,3 +43,8 @@ next-env.d.ts
 /test-results
 /e2e/.auth
 
+# temporary dev logs & screenshots
+dev.log
+*.png
+
+

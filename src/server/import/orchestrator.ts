@@ -22,7 +22,6 @@ import { allocateOrderComponents } from "@/server/workspace/allocation";
 import { classifyCrmTransaction, createOrderFingerprint } from "@/server/workspace/classification";
 import { sourceValue } from "./source-row";
 import { reconcileImportCandidates } from "@/server/workspace/reconciliation";
-import { ingestWorkspaceOrdersFromImport } from "@/server/workspace/pesanan-import";
 import { loadApprovedAliasOverlay } from "@/server/product/aliases";
 import { parseDatabaseAll } from "./database-all-parser";
 import type {
@@ -278,10 +277,12 @@ export async function commitDatabaseAllImport(batchId: number): Promise<ImportCo
       await reconcileImportCandidates(client);
       await detectNewCustomersFromBatch(client, batchId);
 
-      // Workspace CRM V1 (fresh start) — hanya order tanggal >= cutover, hanya
-      // yang seluruh produknya sudah punya alias Master Data (docs prompt §10).
-      // Sepenuhnya independen dari layer di atas (orders/order_items legacy).
-      await ingestWorkspaceOrdersFromImport(client, parsed.orders, batchId);
+      // Batas domain: Database All BERHENTI di sini. Ia mengisi layer Analysis /
+      // Customer Intelligence (orders/order_items legacy, RFM, Cohort, Frequency,
+      // Cluster) dan TIDAK PERNAH menulis workspace_orders/workspace_order_items.
+      // Provenance Workspace yang sah hanya 'MANUAL' — lihat
+      // src/server/workspace/provenance.ts. Jangan pasang kembali pemanggilan
+      // ingest Workspace di sini.
 
       await query(
         client,

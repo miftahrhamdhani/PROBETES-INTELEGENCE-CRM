@@ -1,8 +1,7 @@
 import { loadWorkspaceOverviewAction } from "@/app/workspace-overview-actions";
 import { AppShell } from "@/components/layout/app-shell";
 import { OverviewFilterBar } from "@/components/workspace/overview-filter-bar";
-import { OverviewKpiGrid } from "@/components/workspace/overview-kpi-grid";
-import { PesananOverviewChartsLazy } from "@/components/workspace/pesanan-overview-charts-lazy";
+import { OverviewDashboard } from "@/components/workspace/overview-dashboard";
 import { requireCrmPermission } from "@/server/auth/guards";
 import { resolveDateRangePreset } from "@/lib/workspace-date-presets";
 
@@ -31,21 +30,17 @@ export default async function WorkspaceOverviewPage({ searchParams }: { searchPa
     loadWorkspaceOverviewAction({ from: defaults.from, to: defaults.to }),
   ]);
 
-  const comQuery = new URLSearchParams({ ...(defaults.from ? { from: defaults.from } : {}), ...(defaults.to ? { to: defaults.to } : {}) }).toString();
-
   return (
-    <AppShell title="Overview">
-      <div className="space-y-4">
-        <OverviewFilterBar defaults={defaults} />
-        <OverviewKpiGrid kpi={overview.kpi} comHref={`/workspace/biaya-operasional?${comQuery}`} />
-        <PesananOverviewChartsLazy
-          trend={overview.trend}
-          productsByQuantity={overview.productsByQuantity}
-          productsByRevenue={overview.productsByRevenue}
-          productsByCos={overview.productsByCos}
-          paymentComposition={overview.paymentComposition}
-          customerSummary={overview.customerSummary}
-        />
+    <AppShell title="Overview" hidePageHeader>
+      <div className="-m-4 min-h-screen bg-slate-50/70 p-4 dark:bg-slate-950/30 xl:-m-6 xl:p-6">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight">Overview</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Ringkasan operasional &amp; keuangan CRM</p>
+          </div>
+          <OverviewFilterBar defaults={defaults} />
+        </div>
+        <OverviewDashboard data={overview} />
       </div>
     </AppShell>
   );

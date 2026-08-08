@@ -79,6 +79,22 @@ async function recordUnmappedProduct(
 }
 
 /**
+ * ⛔ DINONAKTIFKAN — JANGAN DIPANGGIL LAGI DARI MANA PUN.
+ *
+ * Batas domain: Database All adalah domain Analysis / Customer Intelligence dan
+ * TIDAK BOLEH membuat `workspace_orders`/`workspace_order_items`. Fungsi ini
+ * dulu dipanggil dari commitDatabaseAllImport() dan dari retry produk tak
+ * dikenal, sehingga order berprovenance `DATABASE_ALL` bocor ke Workspace
+ * Pesanan/KPI/Overview/export. Kedua pemanggilan sudah dicabut; provenance
+ * Workspace yang sah hanya `MANUAL` — lihat src/server/workspace/provenance.ts.
+ *
+ * Kodenya sengaja TIDAK dihapus (bukan cleanup besar, dan jejak logika
+ * dedup/fingerprint-nya masih berguna sebagai rujukan), tapi
+ * tests/workspace-provenance-boundary.test.ts mengunci agar tidak ada modul
+ * produksi yang meng-import-nya kembali.
+ *
+ * ---- dokumentasi historis di bawah ini ----
+ *
  * Ingest workspace_orders/workspace_order_items dari hasil parse Database All
  * (docs prompt §10). HANYA order yang: (a) diklasifikasi CRM (`crmClassification.included`),
  * (b) `orderDate >= cutover`, DAN (c) semua produknya sudah punya alias Master
