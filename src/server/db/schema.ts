@@ -234,7 +234,16 @@ export const importBatches = pgTable(
     errorMessage: text("error_message"),
   },
   (t) => [
-    uniqueIndex("import_batches_source_hash_uq").on(t.sourceType, t.fileHash),
+    /** Batch FAILED SENGAJA dikecualikan: percobaan yang gagal tetap disimpan
+     *  sebagai riwayat (status + error_message + staging), dan upload ulang file
+     *  yang sama harus boleh membuat batch BARU dengan file_hash yang sama.
+     *  Status lain tetap unik — COMPLETED menjaga duplicate protection, dan
+     *  UPLOADING/STAGED menjaga agar tidak ada dua attempt aktif berbarengan
+     *  untuk file yang sama (perlindungan race condition di level DB).
+     *  Lihat migration 0023. */
+    uniqueIndex("import_batches_source_hash_uq")
+      .on(t.sourceType, t.fileHash)
+      .where(sql`${t.status} <> 'FAILED'`),
     uniqueIndex("import_batches_one_active_uq")
       .on(t.sourceType)
       .where(sql`${t.isActive} = true`),

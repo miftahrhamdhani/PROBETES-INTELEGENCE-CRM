@@ -162,6 +162,13 @@
       "when": 1786122000000,
       "tag": "0022_product_alias_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786208400000,
+      "tag": "0023_import_retry_after_failed",
+      "breakpoints": true
     }
   ]
 }

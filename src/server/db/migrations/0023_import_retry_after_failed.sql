@@ -1,0 +1,49 @@
+-- Retry Import setelah batch FAILED.
+--
+-- MASALAH
+-- `import_batches_source_hash_uq` UNIQUE (source_type, file_hash) berlaku untuk
+-- SEMUA status. Ketika sebuah batch gagal (mis. batch 17 — "column cs_id is of
+-- type integer but expression is of type text"), file yang sama tidak bisa
+-- di-upload ulang:
+--   - initDatabaseAllImport() menemukan batch FAILED lama lewat file_hash dan
+--     mengembalikannya sebagai batch yang bisa dilanjutkan;
+--   - stageDatabaseAllRows() menolak batch FAILED ("tidak menerima chunk").
+-- Buntu. Satu-satunya jalan keluar adalah mengubah isi file agar hash-nya beda.
+--
+-- SOLUSI
+-- Keluarkan batch FAILED dari cakupan unique index. Dengan begitu percobaan
+-- ulang boleh membuat BARIS BARU dengan file_hash yang sama, sementara batch
+-- FAILED lama tetap utuh sebagai riwayat (status + error_message + staging).
+--
+-- Yang TETAP dilindungi (tidak dilonggarkan):
+--   - COMPLETED  -> duplicate protection tetap berlaku, file yang sudah sukses
+--                   tidak bisa diimport dua kali;
+--   - UPLOADING/STAGED/PROCESSING -> tetap hanya boleh ada SATU attempt aktif
+--                   per (source_type, file_hash), sehingga dua retry paralel
+--                   tidak bisa sama-sama lolos (perlindungan race condition
+--                   tetap di level database, bukan di aplikasi).
+--
+-- Hanya FAILED yang dikecualikan. Status lain (termasuk CANCELLED yang ada di
+-- enum tapi TIDAK dipakai jalur import) sengaja tidak disebut agar perilakunya
+-- tidak berubah diam-diam.
+--
+-- NON-DESTRUKTIF
+-- Tidak menghapus/mengubah satu baris pun: tidak ada batch dihapus, tidak ada
+-- id/file_hash/error_message/staging yang disentuh. Hanya definisi index.
+-- Sudah diverifikasi sebelum migration: TIDAK ADA duplikat (source_type,
+-- file_hash) di data saat ini, jadi index baru pasti terbentuk.
+--
+-- ROLLBACK
+--   -- HANYA aman kalau belum ada retry yang memakai hash sama. Cek dulu:
+--   --   SELECT source_type, file_hash, COUNT(*) FROM import_batches
+--   --   GROUP BY 1,2 HAVING COUNT(*) > 1;
+--   -- Kalau query di atas mengembalikan baris, rollback ini AKAN GAGAL
+--   -- (unique violation) dan baris duplikat harus diputuskan dulu nasibnya.
+--   DROP INDEX IF EXISTS "import_batches_source_hash_uq";
+--   CREATE UNIQUE INDEX "import_batches_source_hash_uq"
+--     ON "import_batches" ("source_type", "file_hash");
+DROP INDEX IF EXISTS "import_batches_source_hash_uq";
+--> statement-breakpoint
+CREATE UNIQUE INDEX "import_batches_source_hash_uq"
+  ON "import_batches" ("source_type", "file_hash")
+  WHERE "status" <> 'FAILED';

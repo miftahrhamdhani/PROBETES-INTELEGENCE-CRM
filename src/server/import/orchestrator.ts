@@ -3,7 +3,7 @@ import type { QueryResult, QueryResultRow } from "@neondatabase/serverless";
 import { getDb } from "@/server/db/client";
 import { withTransaction, type TransactionClient } from "@/server/db/transaction";
 import { importBatches, stagingImportRows } from "@/server/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { RULE_VERSION } from "@/lib/cluster-codes";
 import type {
   ImportCommitResult,
@@ -43,15 +43,29 @@ export async function initDatabaseAllImport(input: {
   totalRows: number;
 }): Promise<{ batchId: number; duplicate: boolean; completed: boolean }> {
   const db = getDb();
+  // Batch FAILED SENGAJA diabaikan di sini. Percobaan yang gagal bukan sesuatu
+  // yang bisa dilanjutkan — stageDatabaseAllRows() memang menolak status FAILED
+  // (guard itu benar dan tetap dipertahankan). Sebelumnya lookup ini tidak
+  // memfilter status, sehingga upload ulang file yang sama mengembalikan batch
+  // FAILED lama lalu chunk-nya ditolak: buntu, dan satu-satunya jalan keluar
+  // adalah mengubah isi file agar hash-nya berbeda.
+  //
+  // Sekarang batch FAILED dibiarkan apa adanya sebagai riwayat (status,
+  // error_message, staging tetap utuh) dan percobaan berikutnya mendapat BATCH
+  // BARU dengan file_hash yang sama — dimungkinkan oleh partial unique index di
+  // migration 0023. `ORDER BY id DESC` memastikan yang dilihat adalah percobaan
+  // TERAKHIR, bukan yang paling lama.
   const existing = await db
     .select({ id: importBatches.id, status: importBatches.status })
     .from(importBatches)
     .where(
       and(
         eq(importBatches.sourceType, "DATABASE_ALL"),
-        eq(importBatches.fileHash, input.fileHash.toLowerCase())
+        eq(importBatches.fileHash, input.fileHash.toLowerCase()),
+        ne(importBatches.status, "FAILED")
       )
     )
+    .orderBy(desc(importBatches.id))
     .limit(1);
   if (existing[0]) {
     return {
@@ -81,7 +95,17 @@ export async function stageDatabaseAllRows(batchId: number, rows: SourceRow[]): 
   const batch = await getDatabaseAllBatch(batchId);
   if (batch.status === "COMPLETED") return;
   if (batch.status !== "UPLOADING" && batch.status !== "STAGED") {
-    throw new Error(`Batch status ${batch.status} tidak menerima chunk`);
+    // Guard ini BENAR dan tetap dipertahankan: batch gagal tidak boleh
+    // dilanjutkan. Yang diperbaiki hanya pesannya — sebelumnya pesan sekunder
+    // ini menutupi penyebab sebenarnya, sehingga yang terbaca user adalah
+    // "status FAILED tidak menerima chunk" alih-alih error yang benar-benar
+    // menggagalkan import. Setelah perbaikan initDatabaseAllImport(), jalur ini
+    // seharusnya tidak lagi tercapai lewat upload ulang biasa.
+    throw new Error(
+      batch.status === "FAILED" && batch.errorMessage
+        ? `Import sebelumnya gagal: ${batch.errorMessage}`
+        : `Batch status ${batch.status} tidak menerima chunk`
+    );
   }
 
   await db
