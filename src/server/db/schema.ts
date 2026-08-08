@@ -78,6 +78,9 @@ export const groupMembershipSource = pgEnum("group_membership_source", [
   "LEGACY_BACKUP_MASUK_GRUP",
   "LEGACY_TIDAK_MASUK_WA",
   "CRM_MANUAL",
+  /** Masuk grup lewat Import Data Grup (CSV/XLSX) — dibedakan dari CRM_MANUAL
+   *  supaya asal-usul membership tetap terlacak. Lihat migration 0024. */
+  "GROUP_IMPORT",
 ]);
 export const crmTaskType = pgEnum("crm_task_type", [
   "FOLLOW_UP_NEW_CUSTOMER",

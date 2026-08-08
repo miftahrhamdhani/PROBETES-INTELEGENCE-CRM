@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { loadActiveCrmUsersAction, loadWorkspacePesananKpiAction, loadWorkspacePesananListAction } from "@/app/workspace-pesanan-actions";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Pagination } from "@/components/ui/pagination";
 import { PesananFilterBar } from "@/components/workspace/pesanan-filter-bar";
 import { PesananKpiGrid } from "@/components/workspace/pesanan-kpi-grid";
@@ -68,9 +69,11 @@ export default async function WorkspacePesananPage({ searchParams }: { searchPar
 
   return (
     <AppShell title="Pesanan">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Input, pencarian, pengelolaan, dan laporan transaksi CRM.</p>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Kelola input, pencarian, pengelolaan, dan laporan transaksi CRM dengan mudah dan terstruktur.
+          </p>
           {isReturRefundTab ? null : (
             <Button type="button" size="sm" className="gap-1.5" asChild>
               <Link href="/workspace/pesanan/baru"><Plus className="h-3.5 w-3.5" aria-hidden="true" />Input Pesanan</Link>
@@ -84,35 +87,43 @@ export default async function WorkspacePesananPage({ searchParams }: { searchPar
         </div>
         <PesananFilterBar defaults={defaults} crmOptions={crmOptions} tab={filter.tab} />
         {kpi ? <PesananKpiGrid kpi={kpi} /> : null}
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {total === 0
-              ? filter.tab === "draft"
-                ? "Belum ada pesanan draft pada rentang ini."
-                : isReturRefundTab
-                  ? "Belum ada pesanan retur/refund pada rentang ini."
-                  : "Belum ada pesanan pada rentang ini."
-              : `${total.toLocaleString("id-ID")} pesanan pada filter ini.`}
-          </p>
-          <div className="flex gap-1.5">
-            <Button type="button" variant="outline" size="sm" asChild>
-              <a href={`/api/workspace/pesanan/export.csv?${exportQuery}`}>Export CSV</a>
-            </Button>
-            <Button type="button" variant="outline" size="sm" asChild>
-              <a href={`/api/workspace/pesanan/export.xlsx?${exportQuery}`}>Export Excel</a>
-            </Button>
-          </div>
-        </div>
-        <PesananManager rows={rows} tab={filter.tab} />
-        <Pagination
-          page={filter.page}
-          perPage={filter.perPage}
-          total={total}
-          label="pesanan"
-          prevHref={currentPage > 1 ? hrefWith({ page: String(currentPage - 1) }) : null}
-          nextHref={currentPage < totalPages ? hrefWith({ page: String(currentPage + 1) }) : null}
-          perPageHrefs={{ 25: hrefWith({ perPage: "25", page: "1" }), 50: hrefWith({ perPage: "50", page: "1" }), 100: hrefWith({ perPage: "100", page: "1" }) }}
-        />
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+            <div>
+              <CardTitle>Daftar Pesanan</CardTitle>
+              <CardDescription className="mt-0.5">
+                {total === 0
+                  ? filter.tab === "draft"
+                    ? "Belum ada pesanan draft pada rentang ini."
+                    : isReturRefundTab
+                      ? "Belum ada pesanan retur/refund pada rentang ini."
+                      : "Belum ada pesanan pada rentang ini."
+                  : `${total.toLocaleString("id-ID")} pesanan pada filter ini · klik baris untuk melihat detail.`}
+              </CardDescription>
+            </div>
+            <div className="flex gap-1.5">
+              <Button type="button" variant="outline" size="sm" asChild>
+                <a href={`/api/workspace/pesanan/export.csv?${exportQuery}`}>Export CSV</a>
+              </Button>
+              <Button type="button" variant="outline" size="sm" asChild>
+                <a href={`/api/workspace/pesanan/export.xlsx?${exportQuery}`}>Export Excel</a>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <PesananManager rows={rows} tab={filter.tab} />
+            <Pagination
+              page={filter.page}
+              perPage={filter.perPage}
+              total={total}
+              label="pesanan"
+              prevHref={currentPage > 1 ? hrefWith({ page: String(currentPage - 1) }) : null}
+              nextHref={currentPage < totalPages ? hrefWith({ page: String(currentPage + 1) }) : null}
+              perPageHrefs={{ 25: hrefWith({ perPage: "25", page: "1" }), 50: hrefWith({ perPage: "50", page: "1" }), 100: hrefWith({ perPage: "100", page: "1" }) }}
+            />
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   );

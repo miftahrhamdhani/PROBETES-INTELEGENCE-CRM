@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/data-table/data-table";
 import { PesananBulkToolbar } from "@/components/workspace/pesanan-bulk-toolbar";
 import { buildPesananColumns } from "@/components/workspace/pesanan-columns";
-import { PesananDetailDialog } from "@/components/workspace/pesanan-detail-dialog";
+import { PesananDetailSheet } from "@/components/workspace/pesanan-detail-sheet";
 import { PesananMoveDialog } from "@/components/workspace/pesanan-move-dialog";
 import { PesananRowMenu, type PesananMenuTarget } from "@/components/workspace/pesanan-row-menu";
 import { MOVE_LABEL_BY_TAB, MOVE_TARGETS_BY_TAB, type WorkspaceOrderRow, type WorkspacePesananTab } from "@/lib/workspace-pesanan-contracts";
@@ -89,7 +89,7 @@ export function PesananManager({ rows, tab }: { rows: WorkspaceOrderRow[]; tab: 
         onRowClick={(row) => setDetailId(row.id)}
         onRowContextMenu={(row, event) => openMenu(row, event.clientX, event.clientY)}
       />
-      <PesananDetailDialog id={detailId} onClose={() => setDetailId(null)} />
+      <PesananDetailSheet id={detailId} onClose={() => setDetailId(null)} />
       <PesananRowMenu
         target={menuTarget}
         onClose={() => setMenuTarget(null)}

@@ -25,6 +25,8 @@ export interface DataTableProps<T> {
   hasMore: boolean;
   onLoadMore: () => void;
   emptyMessage?: string;
+  /** Nomor awal untuk daftar server-side paginated. Default 0. */
+  rowNumberOffset?: number;
   /** Tinggi viewport tabel (px) — sisa baris di-virtualisasi, tidak semua di-render sekaligus. */
   height?: number;
   rowHeight?: number;
@@ -59,6 +61,7 @@ export function DataTable<T>({
   hasMore,
   onLoadMore,
   emptyMessage = "Tidak ada data yang cocok dengan filter ini.",
+  rowNumberOffset = 0,
   height = 560,
   rowHeight = 38,
   onRowClick,
@@ -74,7 +77,7 @@ export function DataTable<T>({
       minSize: 44,
       maxSize: 90,
       enableResizing: false,
-      cell: ({ row }) => <span className="tabular text-muted-foreground">{row.index + 1}</span>,
+      cell: ({ row }) => <span className="tabular text-muted-foreground">{rowNumberOffset + row.index + 1}</span>,
     };
     // Kolom checkbox ("select") harus jadi kolom TERLUAR (paling kiri) — "No."
     // disisipkan SETELAHNYA, bukan selalu di depan. Tanpa ini "No." menyalip
@@ -83,7 +86,7 @@ export function DataTable<T>({
     const selectIndex = columns.findIndex((c) => c.id === "select");
     if (selectIndex === -1) return [rowNumberColumn, ...columns];
     return [...columns.slice(0, selectIndex + 1), rowNumberColumn, ...columns.slice(selectIndex + 1)];
-  }, [columns]);
+  }, [columns, rowNumberOffset]);
 
   const table = useReactTable({
     data: rows,

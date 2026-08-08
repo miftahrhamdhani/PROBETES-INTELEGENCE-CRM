@@ -1,83 +1,55 @@
-import Link from "next/link";
-import { loadCustomerList, loadMembershipSummary, loadPics } from "@/app/customers-actions";
-import { CUSTOMER_LIST_CHUNK } from "@/lib/list-chunk";
-import { AppShell } from "@/components/layout/app-shell";
-import { CustomerSearchFilter } from "@/components/filters/customer-search-filter";
-import { DateRangeFilter } from "@/components/filters/date-range-filter";
-import { CustomerDetailSheet } from "@/components/customer/customer-detail-sheet";
-import { GroupMembershipSummary } from "@/components/customer/group-membership-summary";
-import { CustomerListTable, type CustomerListFilterInput } from "@/components/customer/customer-list-table";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CLUSTER_LABELS, NON_CLUSTER_LABELS } from "@/lib/cluster-codes";
+import { loadPics } from "@/app/customers-actions";
 import {
-  MEMBERSHIP_STATUS_LABELS,
-  MEMBERSHIP_STATUSES,
-  type MembershipStatusValue,
-} from "@/lib/membership-contracts";
+  loadGroupMembersAction,
+  loadGroupMembershipKpiAction,
+  loadGroupNamesAction,
+} from "@/app/group-membership-actions";
+import { AppShell } from "@/components/layout/app-shell";
+import { GroupMemberFilterBar } from "@/components/filters/group-member-filter-bar";
+import { GroupImportButton } from "@/components/customer/group-import-button";
+import { GroupMemberTable } from "@/components/customer/group-member-table";
+import { GroupMembershipKpiGrid } from "@/components/customer/group-membership-kpi";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Pagination } from "@/components/ui/pagination";
 
 export const dynamic = "force-dynamic";
 
 type SearchParams = Record<string, string | string[] | undefined>;
-
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function clusterLabel(code: string): string {
-  return (
-    (CLUSTER_LABELS as Record<string, string>)[code] ??
-    (NON_CLUSTER_LABELS as Record<string, string>)[code] ??
-    code
-  );
-}
-
-function asMembershipFilter(value: string | undefined): MembershipStatusValue | "CONFLICT" | undefined {
-  if (value === "CONFLICT") return "CONFLICT";
-  return (MEMBERSHIP_STATUSES as readonly string[]).includes(value ?? "")
-    ? (value as MembershipStatusValue)
-    : undefined;
-}
-
-function membershipFilterLabel(value: MembershipStatusValue | "CONFLICT"): string {
-  return value === "CONFLICT" ? "Konflik (belum diselesaikan)" : MEMBERSHIP_STATUS_LABELS[value];
-}
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
 /**
- * Customer > Group Membership — halaman operasional CRM untuk mengelola status
- * grup. Sumber data 100% sama dengan Customer All (listCustomers, getMembershipSummary
- * di src/server/analytics/customers.ts) — tidak ada mock/static data di sini.
+ * Customer > Group Membership — HANYA customer yang SUDAH masuk Grup Konsultasi.
+ *
+ * Baris NOT_GROUPED/UNKNOWN tetap ada di database (dipakai cluster engine lewat
+ * COALESCE(gm.status,'NOT_GROUPED')), tapi sengaja tidak pernah ditampilkan di
+ * sini — halaman ini adalah daftar member grup, bukan daftar seluruh customer.
+ *
+ * Sumber data sama dengan aksi manual "Masukkan ke Grup" di Customers:
+ * tabel `customer_group_memberships` (SSOT tunggal).
  */
-export default async function GroupMembershipPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
+export default async function GroupMembershipPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
-  const search = first(params.search);
-  const cluster = first(params.cluster);
-  const membershipStatus = asMembershipFilter(first(params.membershipStatus));
-  const pic = first(params.pic);
-  const orderDateFrom = first(params.from);
-  const orderDateTo = first(params.to);
-
-  const filter: CustomerListFilterInput = {
-    search,
-    cluster,
-    membershipStatus,
-    pic,
-    orderDateFrom,
-    orderDateTo,
+  const filter = {
+    search: first(params.search),
+    cluster: first(params.cluster),
+    groupName: first(params.groupName),
+    pic: first(params.pic),
+    joinedFrom: first(params.joinedFrom),
+    joinedTo: first(params.joinedTo),
+    page: first(params.page) ? Number(first(params.page)) : 1,
+    perPage: first(params.perPage) ? Number(first(params.perPage)) : 25,
   };
 
-  let initialData;
+  let list;
+  let kpi;
   let picOptions: { id: number; name: string }[];
-  let summary;
+  let groupOptions: string[];
   try {
-    [initialData, picOptions, summary] = await Promise.all([
-      loadCustomerList({ ...filter, page: 1, perPage: CUSTOMER_LIST_CHUNK }),
+    [list, kpi, picOptions, groupOptions] = await Promise.all([
+      loadGroupMembersAction(filter),
+      loadGroupMembershipKpiAction(),
       loadPics(),
-      loadMembershipSummary(),
+      loadGroupNamesAction(),
     ]);
   } catch {
     return (
@@ -92,73 +64,70 @@ export default async function GroupMembershipPage({
     );
   }
 
-  const activeFilters: { label: string; clearHref: string }[] = [];
-  if (cluster) {
-    const query = new URLSearchParams(queryWithout(params, ["cluster"]));
-    activeFilters.push({ label: `Cluster: ${clusterLabel(cluster)}`, clearHref: `/groups?${query.toString()}` });
-  }
-  if (membershipStatus) {
-    const query = new URLSearchParams(queryWithout(params, ["membershipStatus"]));
-    activeFilters.push({
-      label: `Status Grup: ${membershipFilterLabel(membershipStatus)}`,
-      clearHref: `/groups?${query.toString()}`,
-    });
-  }
-  if (pic) {
-    const query = new URLSearchParams(queryWithout(params, ["pic"]));
-    activeFilters.push({ label: `PIC: ${pic}`, clearHref: `/groups?${query.toString()}` });
-  }
-  if (orderDateFrom) {
-    const query = new URLSearchParams(queryWithout(params, ["from", "to"]));
-    activeFilters.push({ label: `Order: ${orderDateFrom} – ${orderDateTo ?? orderDateFrom}`, clearHref: `/groups?${query.toString()}` });
-  }
+  const hrefWith = (patch: Record<string, string>) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      const single = first(value);
+      if (single) query.set(key, single);
+    }
+    for (const [key, value] of Object.entries(patch)) query.set(key, value);
+    return `/groups?${query.toString()}`;
+  };
+  const totalPages = Math.max(Math.ceil(list.total / list.perPage), 1);
+  const currentPage = Math.min(list.page, totalPages);
 
   return (
     <AppShell title="Group Membership">
       <div className="space-y-4">
-        <GroupMembershipSummary summary={summary} />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Kelola data customer yang sudah masuk Grup Konsultasi.
+          </p>
+          <GroupImportButton />
+        </div>
+
+        <GroupMembershipKpiGrid kpi={kpi} />
 
         <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardContent className="pt-5">
+            <GroupMemberFilterBar picOptions={picOptions} groupOptions={groupOptions} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
             <div>
-              <CardTitle>{initialData.total.toLocaleString("id-ID")} customer</CardTitle>
-              <CardDescription>Klik baris untuk buka CRM Enrichment · scroll untuk memuat lebih banyak</CardDescription>
+              <CardTitle>Daftar Member Grup</CardTitle>
+              <CardDescription className="mt-0.5">
+                {list.total === 0
+                  ? "Belum ada customer yang masuk Grup Konsultasi."
+                  : `${list.total.toLocaleString("id-ID")} member grup · klik baris untuk melihat detail.`}
+              </CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <CustomerSearchFilter csOptions={[]} picOptions={picOptions} showCsFilter={false} showConflictOption />
-                <DateRangeFilter />
-              </div>
-              {activeFilters.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {/* `next/link`, BUKAN <a>: <a> memicu full page reload. */}
-                  {activeFilters.map((f) => (
-                    <Link key={f.label} href={f.clearHref} scroll={false}>
-                      <Badge variant="secondary" className="cursor-pointer hover:opacity-70">
-                        {f.label} ✕
-                      </Badge>
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <CustomerListTable variant="group" filter={filter} initialData={initialData} />
+          <CardContent className="space-y-2">
+            <GroupMemberTable
+              rows={list.rows}
+              rowNumberOffset={(currentPage - 1) * list.perPage}
+              picOptions={picOptions}
+              groupOptions={groupOptions}
+            />
+            <Pagination
+              page={currentPage}
+              perPage={list.perPage}
+              total={list.total}
+              label="member grup"
+              prevHref={currentPage > 1 ? hrefWith({ page: String(currentPage - 1) }) : null}
+              nextHref={currentPage < totalPages ? hrefWith({ page: String(currentPage + 1) }) : null}
+              perPageHrefs={{
+                25: hrefWith({ perPage: "25", page: "1" }),
+                50: hrefWith({ perPage: "50", page: "1" }),
+                100: hrefWith({ perPage: "100", page: "1" }),
+              }}
+            />
           </CardContent>
         </Card>
       </div>
-
-      <CustomerDetailSheet picOptions={picOptions} />
     </AppShell>
   );
-}
-
-function queryWithout(params: SearchParams, exclude: string[]): URLSearchParams {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    const single = first(value);
-    if (single && !exclude.includes(key)) query.set(key, single);
-  }
-  return query;
 }

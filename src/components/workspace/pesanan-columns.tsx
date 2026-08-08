@@ -54,27 +54,42 @@ export function buildPesananColumns(opts: {
     { accessorKey: "orderDate", header: "Tanggal", size: 95, cell: ({ getValue }) => formatDate(getValue()) },
     {
       accessorKey: "sourceOrderId",
-      header: "No Order",
-      size: 110,
+      header: "Order ID",
+      size: 130,
       cell: ({ getValue }) => {
         const value = getValue();
-        return value ? <span className="tabular">{value}</span> : <span className="text-muted-foreground">—</span>;
+        return value ? (
+          <span className="font-mono text-primary">{value}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
       },
     },
-    { accessorKey: "customerName", header: "Nama Customer", size: 170 },
-    { accessorKey: "phoneDisplay", header: "Nomor HP", size: 130 },
-    { accessorKey: "crmNameSnapshot", header: "Nama CRM", size: 150 },
+    {
+      // Nama + No HP jadi satu kolom dua baris (seperti desain referensi).
+      // Nomor HP TIDAK dipotong — operator memakainya untuk menghubungi customer.
+      id: "customer",
+      header: "Nama Customer",
+      size: 180,
+      cell: ({ row }) => (
+        <div className="leading-tight">
+          <p className="truncate font-medium">{row.original.customerName}</p>
+          <p className="whitespace-nowrap font-mono text-[10px] text-muted-foreground">{row.original.phoneDisplay}</p>
+        </div>
+      ),
+    },
+    { accessorKey: "crmNameSnapshot", header: "CRM", size: 110 },
     {
       accessorKey: "productsSummary",
-      header: "Ringkasan Produk",
-      size: 260,
+      header: "Produk",
+      size: 200,
       cell: ({ getValue }) => <span className="whitespace-pre-line">{getValue()}</span>,
     },
-    { accessorKey: "totalQty", header: "Total QTY", size: 80, cell: ({ getValue }) => <span className="tabular">{getValue()}</span> },
+    { accessorKey: "totalQty", header: "Qty", size: 60, cell: ({ getValue }) => <span className="tabular">{getValue()}</span> },
     { accessorKey: "totalSalesValue", header: "Total Sales", size: 120, cell: ({ getValue }) => <span className="tabular">{formatRupiah(getValue())}</span> },
     { accessorKey: "cos", header: "COS", size: 110, cell: ({ getValue }) => <span className="tabular">{formatRupiah(getValue())}</span> },
-    { accessorKey: "paymentMethod", header: "Pembayaran", size: 100 },
     { accessorKey: "orderTotal", header: "TOTAL", size: 120, cell: ({ getValue }) => <span className="tabular font-medium">{formatRupiah(getValue())}</span> },
+    { accessorKey: "paymentMethod", header: "Pembayaran", size: 100 },
     { accessorKey: "status", header: "Status", size: 100, cell: ({ getValue }) => <Badge variant={STATUS_VARIANT[getValue() as WorkspaceOrderStatus]}>{getValue()}</Badge> },
     { accessorKey: "sourceType", header: "Sumber Data", size: 100 },
     {

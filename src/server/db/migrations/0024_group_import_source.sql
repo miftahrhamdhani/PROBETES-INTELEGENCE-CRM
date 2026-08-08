@@ -1,0 +1,27 @@
+-- Nilai sumber membership untuk Import Data Grup.
+--
+-- KENAPA
+-- `group_membership_source` hanya punya: LEGACY_MASUK_WA, LEGACY_BACKUP_MASUK_GRUP,
+-- LEGACY_TIDAK_MASUK_WA, CRM_MANUAL. Tidak ada nilai yang mewakili "masuk grup
+-- lewat import file", sehingga kolom "Sumber Update" di halaman Group Membership
+-- tidak bisa membedakan hasil import dari input manual CRM.
+--
+-- Memakai CRM_MANUAL untuk import akan MEMBOHONGI asal-usul data: riwayat tidak
+-- lagi bisa menjawab "membership ini dari mana".
+--
+-- NON-DESTRUKTIF
+-- Hanya MENAMBAH satu nilai enum. Nilai lama tidak diubah/dihapus, tidak ada
+-- baris data yang tersentuh, tidak ada kolom baru. Seluruh 2.500 membership yang
+-- ada tetap memakai nilai LEGACY_* seperti sebelumnya.
+--
+-- CATATAN POSTGRES
+-- ADD VALUE aman dijalankan di dalam transaction (PG 12+) SELAMA nilai barunya
+-- tidak langsung dipakai pada transaction yang sama — migration ini memang hanya
+-- mendaftarkannya. Pemakaiannya baru terjadi saat fitur Import Data Grup commit.
+--
+-- ROLLBACK
+--   PostgreSQL tidak mendukung DROP VALUE pada enum. Untuk membatalkan, nilai
+--   ini cukup dibiarkan tidak terpakai (tidak ada baris yang memakainya sampai
+--   fitur import dijalankan). Menghapusnya sungguhan berarti membuat ulang tipe
+--   enum beserta seluruh kolom yang memakainya — TIDAK disarankan.
+ALTER TYPE "group_membership_source" ADD VALUE IF NOT EXISTS 'GROUP_IMPORT';
